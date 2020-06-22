@@ -16,5 +16,5 @@ clean:
 	-rm monocypher/*.o
 	-rm test
 
-tests:
+tests: kurv
 	bats test.sh

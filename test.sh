@@ -18,19 +18,19 @@ setup() {
     kurv -g test/id
     kurv -g test/id2
 
-    kurv -s README -k test/id.priv > test/signed.txt
+    kurv -s README -P test/id.priv > test/signed.txt
     [ -f 'test/signed.txt' ]
 
     # file w/o signature should fail
-    run kurv -c README -k test/id.pub
+    run kurv -c README -p test/id.pub
     [ "$status" -ne 0 ]
 
     # file with signature
-    run kurv -c test/signed.txt -k test/id.pub
+    run kurv -c test/signed.txt -p test/id.pub
     [ "$status" -eq 0 ]
 
     # should fail
-    run kurv -c test/signed.txt -k test/id2.pub
+    run kurv -c test/signed.txt -p test/id2.pub
     [ "$status" -ne 0 ]
 }
 
@@ -39,29 +39,29 @@ setup() {
     kurv -g test/id
     kurv -g test/id2
 
-    kurv -s README -k test/id.priv \
-        | kurv -s - -k test/id2.priv \
-        | kurv -c - -k test/id2.pub -o \
-        | kurv -c - -k test/id.pub -o
+    kurv -s README -P test/id.priv \
+        | kurv -s - -P test/id2.priv \
+        | kurv -c - -p test/id2.pub -o \
+        | kurv -c - -p test/id.pub -o
 }
 
 @test "checking options" {
     # check -i and -o options are respected
     kurv -g test/id
-    kurv -s README -k test/id.priv > test/output.txt
+    kurv -s README -P test/id.priv > test/output.txt
 
     # with -i specified
-    run kurv -c test/output.txt -k test/id.pub -i
+    run kurv -c test/output.txt -p test/id.pub -i
     [ "$status" -eq 0 ]
     [ "$output" = 'test/id.pub' ]
 
     # with -o specified
-    run kurv -c test/output.txt -k test/id.pub -o
+    run kurv -c test/output.txt -p test/id.pub -o
     [ "$status" -eq 0 ]
     [ "$output" = "$(cat README)" ]
 
     # with -i and -o specified
-    run kurv -c test/output.txt -k test/id.pub -i -o
+    run kurv -c test/output.txt -p test/id.pub -i -o
     [ "$status" -eq 0 ]
     [ "$output" = "test/id.pub
 $(cat README)" ]
@@ -74,7 +74,7 @@ $(cat README)" ]
 
 
     for id in test/keyring/{a,b,c}; do
-        kurv -s README -k "$id.priv" > test/output.txt
+        kurv -s README -P "$id.priv" > test/output.txt
 
         # without KURV_KEYRING
         run kurv -c test/output.txt

@@ -1,25 +1,24 @@
-#include <stdio.h>
+#include <string.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
+#include <stdio.h>
 #include <sys/random.h>
-#include <dirent.h>
+#include <sys/types.h>
 #include <unistd.h>
+#include <dirent.h>
 
-#include "monocypher/monocypher.h"
 #include "base64.h"
+#include "monocypher/monocypher.h"
 
-#define die(...) {\
-    fprintf(stderr, __VA_ARGS__);\
-    exit(1);\
-}
-#define B64_KEY_SIZE 44
-#define B64_SIG_SIZE 88
-#define SIGN_BUF_SIZE (1024 * 4096)
-
-const uint8_t SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
-const uint8_t SIG_END[] = "\n----END KURV SIGNATURE----\n";
+//
+// Macros
+//
+#define READ_SIZE 50
+#define B64_KEY_SIZE 44  // b64_encoded_size(32)
+#define B64_SIG_SIZE 88  // b64_encoded_size(64)
+#define SIG_START "\n----BEGIN KURV SIGNATURE----\n"
+#define SIG_END   "\n----END KURV SIGNATURE----\n"
 const uint8_t USAGE[] =
     "Usage:\n"
     "   kurv -h\n"
@@ -40,356 +39,429 @@ const uint8_t USAGE[] =
     "\n"
     ;
 
-
-void random_buffer(uint8_t buf[], size_t length)
-{
-    // Since length is always == 32 this should always be fine.
-    int rv = getrandom(buf, length, 0);
-    if (rv < 0)
-        die("getrandom() returned %d\n", rv);
+#define die(...) {\
+    fprintf(stderr, __VA_ARGS__);\
+    exit(1);\
 }
 
-
-void write_or_die(const char* filename, const uint8_t buf[], size_t bufsize)
+//
+// Read exactly n bytes into buf.
+// Return -1 on failure.
+//
+int read_exactly(uint8_t* buf, const size_t n, FILE* fp)
 {
-    FILE* fp = fopen(filename, "w");
-    if (fp == NULL)
-        die("cannot open file: %s\n", filename);
-    if (fwrite(buf, sizeof(uint8_t), bufsize, fp) < bufsize)
-        die("cannot write into %s\n", filename);
-    fclose(fp);
+    if (fread(buf, 1, n, fp) != n)
+        return -1;
+    return 0;
 }
 
-
-int read_b64_stream(uint8_t* output, size_t output_size,
-        uint8_t* b64_buf, size_t b64_buf_size,
-        FILE* fp)
+//
+// Decode exactly n bytes
+//
+int decode_exactly(      uint8_t* buf, size_t bufsize,
+                   const uint8_t* b64, size_t b64size)
 {
-    if ((fread(b64_buf, sizeof(uint8_t), b64_buf_size, fp) != b64_buf_size)
-            || ferror(fp)
-            || (b64_validate(b64_buf, b64_buf_size) != 0)
-            || (b64_decoded_size(b64_buf, b64_buf_size) != output_size)) {
-        // we may have some partial information in here,
-        // just wipe to be sure
-        crypto_wipe(b64_buf, b64_buf_size);
-        return 1;
+    if (b64_decoded_size(b64, b64size) != bufsize
+            || b64_validate(b64, b64size) != 0)
+        return -1;
+    b64_decode(buf, b64, b64size);
+    return 0;
+}
+
+//
+// Read entirety of fp into memory, set bufsize as
+// appropriate, and return ptr to the buffer.
+// Returns NULL if any errors occured.
+//
+uint8_t* read_file(FILE* fp, size_t* bufsize)
+{
+    size_t total = 0;           // total buffer size
+    size_t size = READ_SIZE;    // current buffer size
+    uint8_t* buf = malloc(size);
+
+    if (buf == NULL)
+        return NULL;
+
+    size_t n;
+    while (!feof(fp) && ((n = fread(buf + total, sizeof(uint8_t), READ_SIZE, fp)) > 0)) {
+        total += n;
+        if (size <= total) {
+            // realloc
+            size += 2 * READ_SIZE;
+            uint8_t* new = reallocarray(buf, size, sizeof(uint8_t));
+            if (new == NULL) {
+                free(buf);
+                return NULL;
+            }
+            buf = new;
+        }
     }
-    // Store inside output
-    b64_decode(output, b64_buf, b64_buf_size);
-    crypto_wipe(b64_buf, b64_buf_size);
+
+    // error occured reading file
+    if (ferror(fp)) {
+        free(buf);
+        return NULL;
+    }
+
+    *bufsize = total;
+    return buf;
+}
+
+//
+// Try to find the b64 signature in the buffer, write
+// raw signature to signature. Returns the new buffer size
+// (without the signature part).
+//
+size_t find_signature(uint8_t signature[64], const uint8_t* buf, size_t bufsize)
+{
+    size_t start_size = sizeof(SIG_START),
+           sig_size   = B64_SIG_SIZE,
+           end_size   = sizeof(SIG_END),
+           total      = start_size + sig_size + end_size;
+
+    uint8_t b64_sig[B64_SIG_SIZE];
+
+    // Cannot find signature...
+    if ((bufsize < total)
+            || (memcmp(SIG_END,   buf + bufsize - end_size, end_size) != 0)
+            || (memcmp(SIG_START, buf + bufsize - total,  start_size) != 0))
+        return -1;
+    // Copy to b64_sig
+    memcpy(b64_sig, buf + bufsize - sig_size - end_size, sig_size);
+    // Invalid signature encoding
+    if (decode_exactly(signature, 64,
+                       b64_sig, B64_SIG_SIZE) != 0)
+        return -1;
+    return bufsize - total;
+}
+
+//
+// Try to find a public / private key, write raw key into key.
+// Returns -1 if fail, 0 if success.
+//
+int find_key(uint8_t key[32], const uint8_t* buf, size_t bufsize)
+{
+    if ((bufsize < B64_KEY_SIZE)
+            || (decode_exactly(key, 32,
+                               buf, B64_KEY_SIZE)) != 0)
+        return -1;
+    return 0;
+}
+
+//
+// Read from keyfile
+//
+int find_key_in_file(uint8_t key[32], FILE* fp)
+{
+    uint8_t b64_key[B64_KEY_SIZE];
+    if ((fread(b64_key, 1, sizeof(b64_key), fp) != sizeof(b64_key))
+        || (find_key(key, b64_key, sizeof(b64_key)) != 0)) {
+        crypto_wipe(b64_key, sizeof(b64_key));
+        return -1;
+    }
+    return 0;
+}
+
+//
+// Concatenate a with b, adding the NUL byte at the end.
+// Input dst must have size >= a_size + b_size + 1.
+//
+void concat(char* dst, const char* a, size_t a_size,
+                       const char* b, size_t b_size)
+{
+    memcpy(dst,          a, a_size);
+    memcpy(dst + a_size, b, b_size);
+    dst[a_size + b_size] = '\0';
+}
+
+//
+// Check if a string src ends with suffix
+//
+int endswith(const char* src,    size_t src_size,
+             const char* suffix, size_t suffix_size)
+{
+    if (src_size < suffix_size)
+        return -1;
+    return memcmp(src + src_size - suffix_size, suffix, suffix_size);
+}
+
+//
+// Generates keypair at <base>.priv and <base>.pub
+//
+int generate(char* base)
+{
+    uint8_t sk[32],
+            pk[32],
+            b64_sk[B64_KEY_SIZE],
+            b64_pk[B64_KEY_SIZE];
+    // Try to generate a random key
+    if (getrandom(sk, 32, 0) < 0)
+        return -1;
+
+    crypto_sign_public_key(pk, sk);
+    b64_encode(b64_sk, sk, 32);
+    b64_encode(b64_pk, pk, 32);
+
+    // Reserve enough space for .priv and .pub
+    FILE* fp;
+    size_t len = strlen(base);
+    char* path = calloc(len + 5 + 1, sizeof(char));
+    if (path == NULL)
+        die("malloc failed\n");
+
+    // Write private key
+    concat(path, base, len, ".priv", 5);
+    fp = fopen(path, "w");
+    if (fp == NULL
+            || (fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk)))
+        die("failed to write to private key file\n");
+    fclose(fp);
+
+    // Write public key
+    concat(path, base, len, ".pub", 4);
+    fp = fopen(path, "w");
+    if (fp == NULL
+            || (fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk)))
+        die("failed to write to public key file\n");
+    fclose(fp);
+
+    free(path);
     return 0;
 }
 
 
-uint8_t* read_file(FILE* fp, size_t* size)
+//
+// Sign a given file stream with the given signature stream sk_fp.
+//
+int sign(FILE* fp, FILE* sk_fp)
 {
-    // Keep trying to read from fp, remember that
-    // fp can be stdin, so we just need to use `feof'.
-    size_t total = 0;
-    size_t bufsize = SIGN_BUF_SIZE;
-    uint8_t* buf = calloc(bufsize, sizeof(uint8_t));
-    if (buf == NULL)
-        die("malloc() failed\n");
-    for (;;) {
-        int n = fread(buf + total, sizeof(uint8_t), SIGN_BUF_SIZE, fp);
-        if (n > 0)
-            total += n;
-        if (feof(fp)) break;
-        else {
-            // If we are not at eof, realloc
-            bufsize += SIGN_BUF_SIZE;
-            buf = reallocarray(buf, bufsize, sizeof(uint8_t));
-            if (buf == NULL)
-                die("realloc() failed\n");
-        }
-        if (ferror(fp))
-            die("read error\n");
+    // Try to read sk
+    // Make sure to crypto_wipe!
+    uint8_t sk      [32],
+            pk      [32],  // used when computing signature
+            sig     [64],
+            b64_sig [B64_SIG_SIZE];
+
+    if (find_key_in_file(sk, sk_fp) == -1) {
+        crypto_wipe(sk, 32);
+        die("invalid private key.\n");
     }
-    *size = total;
-    return buf;
+
+    size_t msg_size;
+    uint8_t* msg = read_file(fp, &msg_size);
+    if (msg == NULL) {
+        crypto_wipe(sk, 32);
+        die("error reading file.\n");
+    }
+
+    crypto_sign_public_key(pk, sk);
+    crypto_sign(sig,
+                sk, pk,
+                msg, msg_size);
+    b64_encode(b64_sig, sig, 64);
+    crypto_wipe(sk, 32);
+    crypto_wipe(pk, 32);
+
+    fwrite(msg,       sizeof(uint8_t), msg_size,          stdout);
+    fwrite(SIG_START, sizeof(uint8_t), sizeof(SIG_START), stdout);
+    fwrite(b64_sig,   sizeof(uint8_t), sizeof(b64_sig),   stdout);
+    fwrite(SIG_END,   sizeof(uint8_t), sizeof(SIG_END),   stdout);
+    free(msg);
+    return 0;
 }
 
 
-// Find the b64 signature in the buffer.
-//  1) write b64 signature to b64_sig
-//  2) return size of text w/o armoured signature.
-int get_signature(uint8_t* b64_sig,
-                  const uint8_t* buf, size_t bufsize)
+//
+// Check against keyring
+//
+int check_keyring(FILE* fp, int should_show_id, int should_show_og)
 {
-    size_t start_size = sizeof(SIG_START),
-           sig_size   = B64_SIG_SIZE,
-           end_size   = sizeof(SIG_END);
-    size_t total      = start_size + sig_size + end_size;
+    // Check if KURV_KEYRING is set.
+    char*  keyring_dir     = getenv("KURV_KEYRING");
+    size_t keyring_dir_len = keyring_dir == NULL ? 0 : strlen(keyring_dir);
+    if (keyring_dir == NULL || keyring_dir_len == 0)
+        die("$KURV_KEYRING is not set.");
 
-    // Check if we can find the armour
-    if (bufsize < total
-            || (memcmp(buf + bufsize - end_size, SIG_END, end_size)) != 0
-            || (memcmp(buf + bufsize - total, SIG_START, start_size) != 0)) {
-        return -1;
+    // Read message first.
+    uint8_t sig [64];
+    size_t msg_size;
+    uint8_t* msg = read_file(fp, &msg_size);
+    if (msg == NULL)
+        die("error reading file.\n");
+
+    if ((msg_size = find_signature(sig, msg, msg_size)) < 0)
+        die("cannot find / malformed signature.\n");
+
+    // Allocate enough for FNAME + 1 + 1 (NUL byte + '/' if necessary)
+    char* path = malloc(keyring_dir_len + 255 + 2);
+    if (path == NULL)
+        die("malloc() failed.\n");
+
+    memcpy(path, keyring_dir, keyring_dir_len);
+    if (keyring_dir[keyring_dir_len - 1] != '/') {
+        path[keyring_dir_len] = '/';
+        keyring_dir_len++;
     }
-    // Copy into b64_sig
-    memcpy(b64_sig,
-           buf + bufsize - sig_size - end_size,
-           sig_size);
-    return bufsize - total;
-}
 
-
-void join_path(char* buf,
-               char* prefix, size_t prefix_size,
-               char* suffix, size_t suffix_size) {
-    memcpy(buf, prefix, prefix_size);
-    // check if there is a trailing slash!
-    if (buf[prefix_size-1] != '/') {
-        buf[prefix_size] = '/';
-        prefix_size++;
-    }
-    memcpy(buf + prefix_size, suffix, suffix_size);
-    buf[prefix_size + suffix_size] = '\0';
-}
-
-
-void check_keyring(FILE* fp, int output_id, int output_contents)
-{
-    uint8_t public_key     [32],
-            signature      [64],
-            b64_public_key [B64_KEY_SIZE],
-            b64_signature  [B64_SIG_SIZE];
-
-    size_t bufsize;
-    uint8_t *buf = read_file(fp, &bufsize);
-
-    if ((bufsize = get_signature(b64_signature, buf, bufsize)) < 0)
-        die("cannot find signature in file\n");
-
-    b64_decode(signature, b64_signature, B64_SIG_SIZE);
-
-    size_t length;
-    char* keyring_path = getenv("KURV_KEYRING");
-    if (keyring_path == NULL || (length = strlen(keyring_path)) == 0)
-        die("$KURV_KEYRING unset\n");
-
-    char* pathname = malloc(strlen(keyring_path) + 255 + 1);
-    if (pathname == NULL)
-        die("malloc() failed\n");
-
-    DIR* dir = opendir(keyring_path);
-    if (dir == NULL)
-        die("failed to open directory $KURV_KEYRING\n");
+    // Find a matching key
+    DIR* dir = opendir(keyring_dir);
     struct dirent *dp;
+    if (dir == NULL)
+        die("opendir() failed.\n");
 
-    // Find a matching pubkey
     while ((dp = readdir(dir)) != NULL) {
         if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
             continue;
 
-        join_path(pathname,
-                  keyring_path, length,
-                  dp->d_name, strlen(dp->d_name));
-
-        FILE* pk_fp = fopen(pathname, "r");
-        if (pk_fp == NULL)
+        // Check if we can safely concat...
+        size_t len = strlen(dp->d_name);
+        if (len > 255)
             continue;
+        memcpy(path + keyring_dir_len, dp->d_name, len);
+        path[keyring_dir_len + len] = 0;
 
-        // Ignore bad public key files.
-        if (read_b64_stream(public_key, 32,
-                            b64_public_key, B64_KEY_SIZE,
-                            pk_fp) != 0) {
+        // Try to read public key files (ignoring errors)
+        uint8_t pk[32];
+        FILE* pk_fp = fopen(path, "r");
+
+        if (pk_fp == NULL) continue;
+        if (find_key_in_file(pk, pk_fp) != 0 || crypto_check(sig, pk, msg, msg_size) != 0) {
+            fclose(pk_fp);
             continue;
         }
 
-        if (crypto_check(signature,
-                         public_key,
-                         buf, bufsize) == 0) {
-            if (output_id)       printf("%s\n", dp->d_name);
-            if (output_contents) fwrite(buf, 1, bufsize, stdout);
-            exit(0);
-        }
-        fclose(pk_fp);
+        if (should_show_id) printf("%s\n", dp->d_name);
+        if (should_show_og) fwrite(msg, sizeof(char), msg_size, stdout);
+        exit(0);
     }
 
-    free(buf);
-    fprintf(stderr, "unable to find signer.\n");
+    die("cannot find a signer.\n");
     exit(1);
 }
 
 
-void check(FILE* fp, FILE* pk_fp, char* pk_fn, int output_id, int output_contents)
+//
+// Check that a file is signed by a given pk_fp
+//
+int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_show_og)
 {
-    uint8_t public_key     [32],
-            signature      [64],
-            b64_public_key [B64_KEY_SIZE],
-            b64_signature  [B64_SIG_SIZE];
-    if (read_b64_stream(public_key, 32,
-                        b64_public_key, B64_KEY_SIZE,
-                        pk_fp) != 0)
-        die("bad public key\n");
+    // It's fine to not crypto_wipe in this function, we are
+    // only dealing with public keys.
+    uint8_t pk  [32],
+            sig [64];
 
-    size_t bufsize;
-    uint8_t *buf = read_file(fp, &bufsize);
+    if (find_key_in_file(pk, pk_fp) == -1)
+        die("invalid public key.\n");
 
-    if ((bufsize = get_signature(b64_signature, buf, bufsize)) < 0)
-        die("cannot find signature in file\n");
+    size_t msg_size;
+    uint8_t* msg = read_file(fp, &msg_size);
+    if (msg == NULL)
+        die("error reading file.\n");
 
-    if ((b64_validate(b64_signature, B64_SIG_SIZE) != 0)
-            || (b64_decoded_size(b64_signature, B64_SIG_SIZE) != 64)) {
-        die("invalid signature\n");
-    }
+    if ((msg_size = find_signature(sig, msg, msg_size)) < 0)
+        die("cannot find / malformed signature.\n");
 
-    b64_decode(signature, b64_signature, B64_SIG_SIZE);
+    if (crypto_check(sig,
+                     pk,
+                     msg, msg_size) != 0)
+        die("invalid signature.\n");
 
-    if (crypto_check(signature,
-                     public_key,
-                     buf, bufsize) != 0)
-        die("invalid signature\n");
-
-    // output
-    if (output_id)       printf("%s\n", pk_fn);
-    if (output_contents) fwrite(buf, 1, bufsize, stdout);
-    free(buf);
+    if (should_show_id) printf("%s\n", pk_fn);
+    if (should_show_og) fwrite(msg, sizeof(char), msg_size, stdout);
+    free(msg);
+    return 0;
 }
 
 
-// Sign a file stream fp with secret key from sk_fp
-void sign(FILE* fp, FILE* sk_fp)
+//
+// Detach a signature from the file.
+//
+int detach(FILE* fp)
 {
-    uint8_t secret_key[32],
-            public_key[32],
-            signature[64],
-            b64_signature[B64_SIG_SIZE],
-            b64_secret_key[B64_KEY_SIZE];
+    uint8_t sig[64]; // unusued
+    size_t msg_size;
+    uint8_t* msg = read_file(fp, &msg_size);
+    if (msg == NULL)
+        die("error reading file.\n");
 
-    if (read_b64_stream(secret_key, sizeof(secret_key),
-                        b64_secret_key, B64_KEY_SIZE,
-                        sk_fp) != 0)
-        die("bad private key\n");
+    if ((msg_size = find_signature(sig, msg, msg_size)) < 0)
+        die("cannot find / malformed signature.\n");
 
-    size_t bufsize;
-    uint8_t* buf = read_file(fp, &bufsize);
-
-    crypto_sign_public_key(public_key, secret_key);
-    crypto_sign(signature,
-                secret_key,
-                public_key,
-                buf, bufsize);
-    crypto_wipe(secret_key, 32);
-    crypto_wipe(public_key, 32);
-
-    b64_encode(b64_signature, signature, 64);
-
-    // Write to stdout
-    fwrite(buf,           sizeof(uint8_t), bufsize,               stdout);
-    fwrite(SIG_START,     sizeof(uint8_t), sizeof(SIG_START),     stdout);
-    fwrite(b64_signature, sizeof(uint8_t), sizeof(b64_signature), stdout);
-    fwrite(SIG_END,       sizeof(uint8_t), sizeof(SIG_END),       stdout);
-    free(buf);
+    fwrite(msg, sizeof(uint8_t), msg_size, stdout);
+    free(msg);
+    return 0;
 }
 
 
-// Generates a .pub and .priv file
-void generate(char* base)
+//
+// Utiltiy for opening a file or dying
+//
+FILE* fopen_or_die(const char* ctx, const char* fn)
 {
-    uint8_t secret_key[32],
-            public_key[32],
-            secret_key_b64[B64_KEY_SIZE],
-            public_key_b64[B64_KEY_SIZE];
-    random_buffer(secret_key, 32);
-    crypto_sign_public_key(public_key, secret_key);
-
-    b64_encode(secret_key_b64, secret_key, 32);
-    b64_encode(public_key_b64, public_key, 32);
-
-    // Write private key
-    // Allow space for the suffix and a null byte.
-    size_t length = strlen(base);
-    char* path = calloc(length + 6, sizeof(char));
-    if (path == NULL)
-        die("malloc() failed\n");
-
-    memset(path, 0, length + 6);
-    memcpy(path, base, length);
-    memcpy(path+length, ".priv", 5);
-
-    write_or_die(path, secret_key_b64, B64_KEY_SIZE);
-    crypto_wipe(secret_key, 32);
-    crypto_wipe(secret_key_b64, B64_KEY_SIZE);
-
-    // Write public key
-    memset(path, 0, length + 6);
-    memcpy(path, base, length);
-    memcpy(path+length, ".pub", 4);
-
-    write_or_die(path, public_key_b64, B64_KEY_SIZE);
-    crypto_wipe(public_key, 32);
-    crypto_wipe(public_key_b64, B64_KEY_SIZE);
-    free(path);
-}
-
-
-FILE* fopen_with_stdin(const char* filename, const char* type)
-{
-    if (strcmp(filename, "-") == 0)
+    if (strcmp(fn, "-") == 0)
         return stdin;
-    // Otherwise have to do some work
-    FILE* fp = fopen(filename, "r");
+    FILE* fp = fopen(fn, "r");
     if (fp == NULL)
-        die("cannot open %s: %s\n", type, filename);
+        die("cannot open %s: %s\n", fn, ctx);
     return fp;
-}
-
-
-void help(int code)
-{
-    fwrite(USAGE, 1, sizeof(USAGE), stdout);
-    exit(code);
 }
 
 
 int main(int argc, char** argv)
 {
-    FILE* fp = NULL;     // File to sign
-    FILE* key_fp = NULL; // priv/pubkey file
-    char* key_fn = "-";  // priv/pubkey filename
-    char* base = NULL;   // base for generate
-    char action;
-    int should_output_id = 0;
-    int should_output_contents = 0;
+    char* pk_fn  = "";   // neeed for should_show_id
+    FILE* fp     = NULL;
+    FILE* pk_fp  = NULL;
+    FILE* sk_fp  = NULL;
+    char* base   = NULL;
+    char  action = '0';
+    int should_show_id = 0;
+    int should_show_og = 0;
     int c;
-
-    while ((c = getopt(argc, argv, "hg:s:c:k:io")) != -1)
+    while ((c = getopt(argc, argv, "hg:s:c:d:p:P:io")) != -1)
         switch (c) {
             default:  exit(1);
-            case 'h': help(0); break;
-            case 'g': action = 'g'; base = optarg; break;
-            case 's': action = 's'; fp = fopen_with_stdin(optarg, "file"); break;
-            case 'c': action = 'c'; fp = fopen_with_stdin(optarg, "file"); break;
-            case 'k':
-                key_fp = fopen_with_stdin(optarg, "key file");
-                key_fn = optarg;
+            case 'h': fwrite(USAGE, sizeof(char), sizeof(USAGE), stdout);
+            case 'g':
+                action = 'g';
+                base = optarg;
                 break;
-            case 'i': should_output_id = 1; break;
-            case 'o': should_output_contents = 1; break;
+            case 's': action = 's'; fp = fopen_or_die("file for signing",  optarg); break;
+            case 'c': action = 'c'; fp = fopen_or_die("file for checking", optarg); break;
+            case 'd': action = 'd'; fp = fopen_or_die("file for detach", optarg);   break;
+            case 'P': sk_fp = fopen_or_die("private key file", optarg); break;
+            case 'p':
+                pk_fp = fopen_or_die("public key file",  optarg);
+                pk_fn = optarg;
+                break;
+            case 'i': should_show_id = 1; break;
+            case 'o': should_show_og = 1; break;
         }
 
-    if ((key_fp == stdin) && (fp == stdin))
-        die("key-file and file cannot both be stdin\n");
-
+    int rv = 1;
     switch (action) {
-        default: exit(1);
-        case 'g': generate(base); break;
+        case 'g':
+            rv = generate(base);
+            break;
         case 's':
-            if (key_fp == NULL)
-                die("key file not specified\n");
-            sign(fp, key_fp);
+            if (sk_fp == NULL) die("no private key file specified.\n");
+            if (fp == NULL)    die("no file specified.\n");
+            rv = sign(fp, sk_fp);
             break;
         case 'c':
-            if (key_fp != NULL) {
-                check(fp, key_fp, key_fn, should_output_id, should_output_contents);
-            } else {
-                check_keyring(fp, should_output_id, should_output_contents);
-            }
+            if (fp == NULL) die("no file specified.\n");
+            rv = (pk_fp == NULL)
+                ? check_keyring(fp, should_show_id, should_show_og)
+                : check(fp, pk_fp, pk_fn, should_show_id, should_show_og);
+            break;
+        case 'd':
+            if (fp == NULL) die("no file specified.\n");
+            rv = detach(fp);
             break;
     }
-
-    return 0;
+    // If all goes well we close everything and exit.
+    if (fp != NULL)    fclose(fp);
+    if (pk_fp != NULL) fclose(pk_fp);
+    if (sk_fp != NULL) fclose(sk_fp);
+    exit(rv);
 }
