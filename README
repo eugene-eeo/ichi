@@ -18,6 +18,9 @@
        $ kurv -s file.txt -k id.priv > file-signed.txt
 
     3. check signature:
+       if a keyfile under -k is not specified, then kurv
+       searches for public keys in $KURV_KEYRING.
 
        $ kurv -c file-signed.txt -k id.pub
+       $ KURV_KEYRING='...' kurv -c file-signed.txt
 
