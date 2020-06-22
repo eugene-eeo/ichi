@@ -1,0 +1,23 @@
+
+  $ kurv_
+
+  Tool to sign files using EdDSA (Ed25519 + Blake2b)
+  Example workflow:
+
+    1. generate a keypair:
+       this generates two files, <base>.pub and <base>.priv,
+       you can publish <base>.pub, but <base>.priv has to
+       be secret.
+
+       $ kurv -g id
+       $ ls
+       file.txt id.pub id.priv
+
+    2. sign a file:
+
+       $ kurv -s file.txt -k id.priv > file-signed.txt
+
+    3. check signature:
+
+       $ kurv -c file-signed.txt -k id.pub
+
