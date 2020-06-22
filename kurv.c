@@ -20,7 +20,6 @@
 
 const uint8_t SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
 const uint8_t SIG_END[] = "\n----END KURV SIGNATURE----\n";
-const uint8_t HELP[] = "";
 const uint8_t USAGE[] =
     "Usage:\n"
     "   kurv -h\n"
@@ -359,6 +358,7 @@ int main(int argc, char** argv)
 
     while ((c = getopt(argc, argv, "hg:s:c:k:io")) != -1)
         switch (c) {
+            default:  exit(1);
             case 'h': help(0); break;
             case 'g': action = 'g'; base = optarg; break;
             case 's': action = 's'; fp = fopen_with_stdin(optarg, "file"); break;
@@ -369,13 +369,13 @@ int main(int argc, char** argv)
                 break;
             case 'i': should_output_id = 1; break;
             case 'o': should_output_contents = 1; break;
-            default:  help(1); break;
         }
 
     if ((key_fp == stdin) && (fp == stdin))
         die("key-file and file cannot both be stdin\n");
 
     switch (action) {
+        default: exit(1);
         case 'g': generate(base); break;
         case 's':
             if (key_fp == NULL)
@@ -389,7 +389,6 @@ int main(int argc, char** argv)
                 check_keyring(fp, should_output_id, should_output_contents);
             }
             break;
-        default: help(1); break;
     }
 
     return 0;
