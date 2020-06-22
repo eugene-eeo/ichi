@@ -154,7 +154,7 @@ int find_key(uint8_t key[32], const uint8_t* buf, size_t bufsize)
 int find_key_in_file(uint8_t key[32], FILE* fp)
 {
     uint8_t b64_key[B64_KEY_SIZE];
-    if ((fread(b64_key, 1, sizeof(b64_key), fp) != sizeof(b64_key))
+    if ((read_exactly(b64_key, B64_KEY_SIZE, fp) != 0)
         || (find_key(key, b64_key, sizeof(b64_key)) != 0)) {
         crypto_wipe(b64_key, sizeof(b64_key));
         return -1;
