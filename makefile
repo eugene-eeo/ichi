@@ -10,6 +10,13 @@ kurv: kurv.o base64.o monocypher/monocypher.o
 		kurv.o \
 		base64.o
 
+debug:
+	$(CC) -o kurv \
+		monocypher/monocypher.c \
+		kurv.c \
+		base64.c \
+		-Og -g
+
 clean:
 	-rm kurv
 	-rm *.o

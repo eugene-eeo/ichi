@@ -113,7 +113,7 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
 // raw signature to signature. Returns the new buffer size
 // (without the signature part).
 //
-size_t find_signature(uint8_t signature[64], const uint8_t* buf, size_t bufsize)
+int find_signature(uint8_t signature[64], const uint8_t* buf, size_t* bufsize)
 {
     size_t start_size = sizeof(SIG_START),
            sig_size   = B64_SIG_SIZE,
@@ -123,17 +123,19 @@ size_t find_signature(uint8_t signature[64], const uint8_t* buf, size_t bufsize)
     uint8_t b64_sig[B64_SIG_SIZE];
 
     // Cannot find signature...
-    if ((bufsize < total)
-            || (memcmp(SIG_END,   buf + bufsize - end_size, end_size) != 0)
-            || (memcmp(SIG_START, buf + bufsize - total,  start_size) != 0))
+    size_t size = *bufsize;
+    if ((size < total)
+            || (memcmp(SIG_END,   buf + size - end_size, end_size) != 0)
+            || (memcmp(SIG_START, buf + size - total,  start_size) != 0))
         return -1;
     // Copy to b64_sig
-    memcpy(b64_sig, buf + bufsize - sig_size - end_size, sig_size);
+    memcpy(b64_sig, buf + size - sig_size - end_size, sig_size);
     // Invalid signature encoding
     if (decode_exactly(signature, 64,
                        b64_sig, B64_SIG_SIZE) != 0)
         return -1;
-    return bufsize - total;
+    *bufsize = size - total;
+    return 0;
 }
 
 //
@@ -290,7 +292,7 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
     if (msg == NULL)
         die("error reading file.\n");
 
-    if ((msg_size = find_signature(sig, msg, msg_size)) < 0)
+    if ((find_signature(sig, msg, &msg_size)) < 0)
         die("cannot find / malformed signature.\n");
 
     // Allocate enough for FNAME + 1 + 1 (NUL byte + '/' if necessary)
@@ -359,7 +361,7 @@ int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_sho
     if (msg == NULL)
         die("error reading file.\n");
 
-    if ((msg_size = find_signature(sig, msg, msg_size)) < 0)
+    if ((find_signature(sig, msg, &msg_size)) < 0)
         die("cannot find / malformed signature.\n");
 
     if (crypto_check(sig,
@@ -379,13 +381,13 @@ int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_sho
 //
 int detach(FILE* fp)
 {
-    uint8_t sig[64]; // unusued
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL)
         die("error reading file.\n");
 
-    if ((msg_size = find_signature(sig, msg, msg_size)) < 0)
+    uint8_t sig[64]; // unusued
+    if (find_signature(sig, msg, &msg_size) < 0)
         die("cannot find / malformed signature.\n");
 
     fwrite(msg, sizeof(uint8_t), msg_size, stdout);
