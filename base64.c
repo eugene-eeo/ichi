@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
+#include "base64.h"
 
 
 // Encoding table

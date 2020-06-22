@@ -1,1 +1,3 @@
 /kurv
+*.o
+/test/

@@ -25,11 +25,17 @@ const uint8_t SIG_END[] = "\n----END KURV SIGNATURE----\n";
 const uint8_t USAGE[] =
     "usage:\n"
     "   kurv -h\n"
-    "   kurv -g <name>                       generate keypair <name>.pub and <name>.priv\n"
-    "   kurv -s <file> -k <privkey>          sign <file> with <privkey>\n"
-    "   kurv -c <signed-file> [-k <pubkey>]  check <signed-file> with <pubkey>\n"
-    "                                        if <pubkey> is not specified, search\n"
-    "                                        $KURV_KEYRING for a matching pubkey.\n"
+    "   kurv -g <name>                generate keypair <name>.pub and <name>.priv\n"
+    "   kurv -s <file> -k <privkey>   sign <file> with <privkey>\n"
+    "   kurv -c <signed-file> [-k <pubkey>] [-i] [-o]\n"
+    "\n"
+    "       check <signed-file> with <pubkey>.\n"
+    "       if <pubkey> is not specified, search\n"
+    "       $KURV_KEYRING for a matching pubkey.\n"
+    "       on success:\n"
+    "           if -i is specified, the id will be printed.\n"
+    "           if -o is specified, the original contents\n"
+    "           will be written to stdout.\n"
     ;
 
 
@@ -84,9 +90,8 @@ uint8_t* read_file(FILE* fp, size_t* size)
         die("malloc() failed\n");
     for (;;) {
         int n = fread(buf + total, sizeof(uint8_t), SIGN_BUF_SIZE, fp);
-        if (n >= 0) {
+        if (n > 0)
             total += n;
-        }
         if (feof(fp)) break;
         else {
             // If we are not at eof, realloc
@@ -111,10 +116,12 @@ int get_signature(uint8_t* b64_sig,
 {
     size_t start_size = sizeof(SIG_START),
            sig_size   = B64_SIG_SIZE,
-           end_size   = sizeof(SIG_END),
-           total      = start_size + sig_size + end_size;
+           end_size   = sizeof(SIG_END);
+    size_t total      = start_size + sig_size + end_size;
+
     // Check if we can find the armour
-    if ((memcmp(buf + bufsize - end_size, SIG_END, end_size)) != 0
+    if (bufsize < total
+            || (memcmp(buf + bufsize - end_size, SIG_END, end_size)) != 0
             || (memcmp(buf + bufsize - total, SIG_START, start_size) != 0)) {
         return -1;
     }
@@ -126,7 +133,7 @@ int get_signature(uint8_t* b64_sig,
 }
 
 
-void check_keyring(FILE* fp)
+void check_keyring(FILE* fp, int output_id, int output_contents)
 {
     uint8_t public_key     [32],
             signature      [64],
@@ -178,7 +185,8 @@ void check_keyring(FILE* fp)
         if (crypto_check(signature,
                          public_key,
                          buf, bufsize) == 0) {
-            printf("%s\n", globbuf.gl_pathv[i]);
+            if (output_id)       printf("%s\n", globbuf.gl_pathv[i]);
+            if (output_contents) fwrite(buf, 1, bufsize, stdout);
             exit(0);
         }
         fclose(pk_fp);
@@ -192,7 +200,7 @@ void check_keyring(FILE* fp)
 }
 
 
-void check(FILE* fp, FILE* pk_fp)
+void check(FILE* fp, FILE* pk_fp, char* pk_fn, int output_id, int output_contents)
 {
     uint8_t public_key     [32],
             signature      [64],
@@ -215,14 +223,16 @@ void check(FILE* fp, FILE* pk_fp)
     }
 
     b64_decode(signature, b64_signature, B64_SIG_SIZE);
-    int rv = crypto_check(signature,
-                          public_key,
-                          buf, bufsize);
-    free(buf);
-    if (rv != 0) {
-        // bad
+
+    if (crypto_check(signature,
+                     public_key,
+                     buf, bufsize) != 0)
         die("invalid signature\n");
-    }
+
+    // output
+    if (output_id)       printf("%s\n", pk_fn);
+    if (output_contents) fwrite(buf, 1, bufsize, stdout);
+    free(buf);
 }
 
 
@@ -278,10 +288,11 @@ void generate(char* base)
     // Write private key
     // Allow space for the suffix and a null byte.
     size_t length = strlen(base);
-    if (length > NAME_MAX - 5 - 1)
-        die("base length too long, must be between 0 and %d\n", NAME_MAX - 5 - 1);
-    char path[NAME_MAX];
-    memset(path, 0, NAME_MAX);
+    char* path = calloc(length + 6, sizeof(char));
+    if (path == NULL)
+        die("malloc() failed\n");
+
+    memset(path, 0, length + 6);
     memcpy(path, base, length);
     memcpy(path+length, ".priv", 5);
 
@@ -290,13 +301,14 @@ void generate(char* base)
     crypto_wipe(secret_key_b64, B64_KEY_SIZE);
 
     // Write public key
-    memset(path, 0, NAME_MAX);
+    memset(path, 0, length + 6);
     memcpy(path, base, length);
     memcpy(path+length, ".pub", 4);
 
     write_or_die(path, public_key_b64, B64_KEY_SIZE);
     crypto_wipe(public_key, 32);
     crypto_wipe(public_key_b64, B64_KEY_SIZE);
+    free(path);
 }
 
 
@@ -312,36 +324,44 @@ FILE* fopen_with_stdin(char* filename)
 }
 
 
+void help(int code)
+{
+    fwrite(USAGE, 1, sizeof(USAGE), stdout);
+    exit(code);
+}
+
+
 int main(int argc, char** argv)
 {
     FILE* fp = NULL;     // File to sign
-    FILE* key_fp = NULL; // Priv or pubkey file
+    FILE* key_fp = NULL; // priv/pubkey file
+    char* key_fn = "-";  // priv/pubkey filename
     char* base = NULL;   // base for generate
     char action;
+    int should_output_id = 0;
+    int should_output_contents = 0;
     int c;
-    int rv = 0;
 
-    while ((c = getopt(argc, argv, "hg:s:c:k:")) != -1)
+    while ((c = getopt(argc, argv, "hg:s:c:k:io")) != -1)
         switch (c) {
-            case 'h':
-                fwrite(USAGE, 1, sizeof(USAGE), stdout);
-                exit(0);
-                break;
+            case 'h': help(0); break;
             case 'g': action = 'g'; base = optarg; break;
             case 's': action = 's'; fp = fopen_with_stdin(optarg); break;
             case 'c': action = 'c'; fp = fopen_with_stdin(optarg); break;
-            case 'k':           key_fp = fopen_with_stdin(optarg); break;
-            default:
-                fwrite(USAGE, 1, sizeof(USAGE), stderr);
-                rv = 1;
+            case 'k':
+                key_fp = fopen_with_stdin(optarg);
+                key_fn = optarg;
                 break;
+            case 'i': should_output_id = 1; break;
+            case 'o': should_output_contents = 1; break;
+            default:  help(1); break;
         }
 
     if ((key_fp == stdin) && (fp == stdin))
         die("key-file and file cannot both be stdin\n");
 
     switch (action) {
-        case 'g': generate(base);    break;
+        case 'g': generate(base); break;
         case 's':
             if (key_fp == NULL)
                 die("key file not specified\n");
@@ -349,14 +369,13 @@ int main(int argc, char** argv)
             break;
         case 'c':
             if (key_fp != NULL) {
-                check(fp, key_fp);
+                check(fp, key_fp, key_fn, should_output_id, should_output_contents);
             } else {
-                check_keyring(fp);
+                check_keyring(fp, should_output_id, should_output_contents);
             }
             break;
+        default: help(1); break;
     }
 
-    if (    fp != NULL) fclose(fp);
-    if (key_fp != NULL) fclose(key_fp);
-    return rv;
+    return 0;
 }
