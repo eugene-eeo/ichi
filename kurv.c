@@ -4,8 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/random.h>
+#include <dirent.h>
 #include <unistd.h>
-#include <glob.h>
 
 #include "monocypher/monocypher.h"
 #include "base64.h"
@@ -20,20 +20,25 @@
 
 const uint8_t SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
 const uint8_t SIG_END[] = "\n----END KURV SIGNATURE----\n";
+const uint8_t HELP[] = "";
 const uint8_t USAGE[] =
-    "usage:\n"
+    "Usage:\n"
     "   kurv -h\n"
-    "   kurv -g <name>                generate keypair <name>.pub and <name>.priv\n"
-    "   kurv -s <file> -k <privkey>   sign <file> with <privkey>\n"
+    "   kurv -g <name>\n"
+    "   kurv -s <file> -k <privkey>\n"
     "   kurv -c <signed-file> [-k <pubkey>] [-i] [-o]\n"
     "\n"
-    "       check <signed-file> with <pubkey>.\n"
-    "       if <pubkey> is not specified, search\n"
-    "       $KURV_KEYRING for a matching pubkey.\n"
-    "       on success:\n"
-    "           if -i is specified, the id will be printed.\n"
-    "           if -o is specified, the original contents\n"
-    "           will be written to stdout.\n"
+    "Options:\n"
+    "   -h         show help page\n"
+    "   -g         generate keypair <name>.pub and <name>.priv\n"
+    "   -k <key>   specify the pub/priv key file for signing/checking\n"
+    "   -s <file>  sign <file> using the key given\n"
+    "   -c <signed-file> check signed file using the key given (if any)\n"
+    "                    if no key file is specified, try .pub files in\n"
+    "                    $KURV_KEYRING until we find a valid key.\n"
+    "   -i         output the <key> used upon successful check.\n"
+    "   -o         output the data upon successful check.\n"
+    "\n"
     ;
 
 
@@ -131,6 +136,20 @@ int get_signature(uint8_t* b64_sig,
 }
 
 
+void join_path(char* buf,
+               char* prefix, size_t prefix_size,
+               char* suffix, size_t suffix_size) {
+    memcpy(buf, prefix, prefix_size);
+    // check if there is a trailing slash!
+    if (buf[prefix_size-1] != '/') {
+        buf[prefix_size] = '/';
+        prefix_size++;
+    }
+    memcpy(buf + prefix_size, suffix, suffix_size);
+    buf[prefix_size + suffix_size] = '\0';
+}
+
+
 void check_keyring(FILE* fp, int output_id, int output_contents)
 {
     uint8_t public_key     [32],
@@ -146,30 +165,30 @@ void check_keyring(FILE* fp, int output_id, int output_contents)
 
     b64_decode(signature, b64_signature, B64_SIG_SIZE);
 
-    // Build glob path
+    size_t length;
     char* keyring_path = getenv("KURV_KEYRING");
-    if (keyring_path == NULL) {
+    if (keyring_path == NULL || (length = strlen(keyring_path)) == 0)
         die("$KURV_KEYRING unset\n");
-    }
 
-    size_t length = strlen(keyring_path);
-    char* glob_pattern = calloc(length + 6 + 1, sizeof(uint8_t));
-    if (glob_pattern == NULL)
-        die("cannot malloc()\n");
+    char* pathname = malloc(strlen(keyring_path) + 255 + 1);
+    if (pathname == NULL)
+        die("malloc() failed\n");
 
-    memcpy(glob_pattern, keyring_path, length);
-
-    // Check if it ends with /
-    if (keyring_path != NULL && keyring_path[length - 1] != '/')
-        memcpy(glob_pattern + length, "/*.pub", 6);
-    else
-        memcpy(glob_pattern + length, "*.pub", 5);
+    DIR* dir = opendir(keyring_path);
+    if (dir == NULL)
+        die("failed to open directory $KURV_KEYRING\n");
+    struct dirent *dp;
 
     // Find a matching pubkey
-    glob_t globbuf;
-    glob(glob_pattern, GLOB_TILDE, NULL, &globbuf);
-    for (size_t i = 0; i < globbuf.gl_pathc; i++) {
-        FILE* pk_fp = fopen(globbuf.gl_pathv[i], "r");
+    while ((dp = readdir(dir)) != NULL) {
+        if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
+            continue;
+
+        join_path(pathname,
+                  keyring_path, length,
+                  dp->d_name, strlen(dp->d_name));
+
+        FILE* pk_fp = fopen(pathname, "r");
         if (pk_fp == NULL)
             continue;
 
@@ -183,15 +202,13 @@ void check_keyring(FILE* fp, int output_id, int output_contents)
         if (crypto_check(signature,
                          public_key,
                          buf, bufsize) == 0) {
-            if (output_id)       printf("%s\n", globbuf.gl_pathv[i]);
+            if (output_id)       printf("%s\n", dp->d_name);
             if (output_contents) fwrite(buf, 1, bufsize, stdout);
             exit(0);
         }
         fclose(pk_fp);
     }
 
-    globfree(&globbuf);
-    free(glob_pattern);
     free(buf);
     fprintf(stderr, "unable to find signer.\n");
     exit(1);
@@ -310,14 +327,14 @@ void generate(char* base)
 }
 
 
-FILE* fopen_with_stdin(char* filename)
+FILE* fopen_with_stdin(const char* filename, const char* type)
 {
     if (strcmp(filename, "-") == 0)
         return stdin;
     // Otherwise have to do some work
     FILE* fp = fopen(filename, "r");
     if (fp == NULL)
-        die("cannot open file: %s\n", filename);
+        die("cannot open %s: %s\n", type, filename);
     return fp;
 }
 
@@ -344,10 +361,10 @@ int main(int argc, char** argv)
         switch (c) {
             case 'h': help(0); break;
             case 'g': action = 'g'; base = optarg; break;
-            case 's': action = 's'; fp = fopen_with_stdin(optarg); break;
-            case 'c': action = 'c'; fp = fopen_with_stdin(optarg); break;
+            case 's': action = 's'; fp = fopen_with_stdin(optarg, "file"); break;
+            case 'c': action = 'c'; fp = fopen_with_stdin(optarg, "file"); break;
             case 'k':
-                key_fp = fopen_with_stdin(optarg);
+                key_fp = fopen_with_stdin(optarg, "key file");
                 key_fn = optarg;
                 break;
             case 'i': should_output_id = 1; break;
