@@ -10,8 +10,6 @@
 #include "monocypher/monocypher.h"
 #include "base64.h"
 
-// PATH_MAX is too crazy, be conservative and just define it ourselves.
-#define NAME_MAX 255
 #define die(...) {\
     fprintf(stderr, __VA_ARGS__);\
     exit(1);\
