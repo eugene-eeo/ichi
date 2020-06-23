@@ -163,26 +163,13 @@ int find_signature(uint8_t signature[64], const uint8_t* buf, size_t* bufsize)
 }
 
 //
-// Try to find a public / private key, write raw key into key.
-// Returns -1 if fail, 0 if success.
-//
-int find_key(uint8_t key[32], const uint8_t* buf, size_t bufsize)
-{
-    if (bufsize < B64_KEY_SIZE
-            || decode_exactly(key, 32,
-                              buf, B64_KEY_SIZE) != 0)
-        return -1;
-    return 0;
-}
-
-//
 // Read from keyfile
 //
 int find_key_in_file(uint8_t key[32], FILE* fp)
 {
     uint8_t b64_key[B64_KEY_SIZE];
     if (read_exactly(b64_key, B64_KEY_SIZE, fp) != 0
-            || find_key(key, b64_key, sizeof(b64_key)) != 0) {
+            || decode_exactly(key, 32, b64_key, B64_KEY_SIZE) != 0) {
         crypto_wipe(b64_key, sizeof(b64_key));
         return -1;
     }
@@ -332,25 +319,14 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
         die("$KURV_KEYRING is not set.");
 
     // Read message first.
-    uint8_t sig [64];
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL)
         die("error reading file.");
 
+    uint8_t sig [64];
     if (find_signature(sig, msg, &msg_size) < 0)
         die("cannot find / malformed signature.");
-
-    // Allocate enough for FNAME + 1 + 1 (NUL byte + '/' if necessary)
-    char* path = malloc(keyring_dir_len + NAME_MAX + 2);
-    if (path == NULL)
-        errdie("malloc");
-
-    memcpy(path, keyring_dir, keyring_dir_len);
-    if (keyring_dir[keyring_dir_len - 1] != '/') {
-        path[keyring_dir_len] = '/';
-        keyring_dir_len++;
-    }
 
     // Find a matching key
     DIR* dir = opendir(keyring_dir);
@@ -365,13 +341,12 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
                 || endswith(dp->d_name, ".pub") != 0)
             continue;
 
-        memcpy(path + keyring_dir_len,
-               dp->d_name, strlen(dp->d_name) + 1); // copy over NUL byte as well.
-
         // Try to read public key files (ignoring errors)
         uint8_t pk[32];
-        FILE* pk_fp = fopen(path, "r");
+        int fd = openat(dirfd(dir), dp->d_name, O_RDONLY);
+        if (fd < 0) continue;
 
+        FILE* pk_fp = fdopen(fd, "r");
         if (pk_fp == NULL) continue;
         if (find_key_in_file(pk, pk_fp) != 0 || crypto_check(sig, pk, msg, msg_size) != 0) {
             fclose(pk_fp);

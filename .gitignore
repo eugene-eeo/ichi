@@ -1,3 +1,5 @@
 /kurv
 *.o
 /test/
+/id.priv
+/id.pub
