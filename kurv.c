@@ -17,8 +17,13 @@
 #define READ_SIZE 50
 #define B64_KEY_SIZE 44  // b64_encoded_size(32)
 #define B64_SIG_SIZE 88  // b64_encoded_size(64)
-#define SIG_START "\n----BEGIN KURV SIGNATURE----\n"
-#define SIG_END   "\n----END KURV SIGNATURE----\n"
+#define die(...) {\
+    fprintf(stderr, __VA_ARGS__);\
+    exit(1);\
+}
+
+const uint8_t SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
+const uint8_t SIG_END[] =   "\n----END KURV SIGNATURE----\n";
 const uint8_t USAGE[] =
     "usage:\n"
     "   kurv -h\n"
@@ -39,11 +44,6 @@ const uint8_t USAGE[] =
     "   -o         output the data upon successful check.\n"
     "\n"
     ;
-
-#define die(...) {\
-    fprintf(stderr, __VA_ARGS__);\
-    exit(1);\
-}
 
 //
 // Read exactly n bytes into buf.
@@ -115,9 +115,9 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
 //
 int find_signature(uint8_t signature[64], const uint8_t* buf, size_t* bufsize)
 {
-    size_t start_size = sizeof(SIG_START),
+    size_t start_size = sizeof(SIG_START) - 1,
            sig_size   = B64_SIG_SIZE,
-           end_size   = sizeof(SIG_END),
+           end_size   = sizeof(SIG_END) - 1,
            total      = start_size + sig_size + end_size;
 
     uint8_t b64_sig[B64_SIG_SIZE];
@@ -265,10 +265,10 @@ int sign(FILE* fp, FILE* sk_fp)
     crypto_wipe(sk, 32);
     crypto_wipe(pk, 32);
 
-    fwrite(msg,       sizeof(uint8_t), msg_size,          stdout);
-    fwrite(SIG_START, sizeof(uint8_t), sizeof(SIG_START), stdout);
-    fwrite(b64_sig,   sizeof(uint8_t), sizeof(b64_sig),   stdout);
-    fwrite(SIG_END,   sizeof(uint8_t), sizeof(SIG_END),   stdout);
+    fwrite(msg,       sizeof(uint8_t), msg_size,            stdout);
+    fwrite(SIG_START, sizeof(uint8_t), sizeof(SIG_START)-1, stdout);
+    fwrite(b64_sig,   sizeof(uint8_t), sizeof(b64_sig),     stdout);
+    fwrite(SIG_END,   sizeof(uint8_t), sizeof(SIG_END)-1,   stdout);
     free(msg);
     return 0;
 }
