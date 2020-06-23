@@ -451,13 +451,10 @@ int detach(FILE* fp)
 //
 void keyfile_warn(char* fn, int is_priv)
 {
-    if (endswith(fn, is_priv ? ".priv" : ".pub") != 0) {
-        if (is_priv) {
-            fprintf(stderr, "kurv: warning: private key file doesn't end in .priv\n");
-        } else {
-            fprintf(stderr, "kurv: warning: public key file doesn't end in .pub\n");
-        }
-    }
+    if (endswith(fn, is_priv ? ".priv" : ".pub") != 0)
+        fprintf(stderr, "kurv: warning: %s key file doesn't end in %s\n",
+                is_priv ? "private" : "public",
+                is_priv ? ".priv" : ".pub");
 }
 
 
