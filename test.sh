@@ -7,6 +7,13 @@ setup() {
     run mkdir test/keyring
 }
 
+@test "help page" {
+    # really just a regression so I don't fuck up kurv -h
+    # by forgetting to break again.
+    run kurv -h
+    [ "$status" -eq 0 ]
+}
+
 @test "key generation" {
     run kurv -g test/id
     [ "$status" -eq 0 ]
@@ -72,7 +79,6 @@ $(cat README)" ]
     kurv -g test/keyring/b
     kurv -g test/keyring/c
 
-
     for id in test/keyring/{a,b,c}; do
         kurv -s README -P "$id.priv" > test/output.txt
 
@@ -91,4 +97,10 @@ $(cat README)" ]
         [ "$status" -eq 0 ]
         [ "$output" = "$bname.pub" ]
     done
+}
+
+@test "detach" {
+    kurv -g test/id
+    output=$(kurv -s monocypher/monocypher.c -P test/id.priv | kurv -d -)
+    [ "$output" = "$(cat monocypher/monocypher.c)" ]
 }

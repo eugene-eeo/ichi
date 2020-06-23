@@ -30,6 +30,7 @@ const uint8_t USAGE[] =
     "   kurv -g <name>\n"
     "   kurv -s <file> -P <privkey>\n"
     "   kurv -c <signed-file> [-p <pubkey>] [-i] [-o]\n"
+    "   kurv -d <signed-file>\n"
     "\n"
     "options:\n"
     "   -h         show help page.\n"
@@ -41,7 +42,8 @@ const uint8_t USAGE[] =
     "                    if no key file is specified, try .pub files in\n"
     "                    $KURV_KEYRING until we find a valid key.\n"
     "   -i         output the <key> used upon successful check.\n"
-    "   -o         output the data upon successful check.\n"
+    "   -o         output the file contents upon successful check.\n"
+    "   -d         detach signature from the signed file.\n"
     "\n"
     ;
 
@@ -206,6 +208,8 @@ int generate(char* base)
     crypto_sign_public_key(pk, sk);
     b64_encode(b64_sk, sk, 32);
     b64_encode(b64_pk, pk, 32);
+    crypto_wipe(sk, 32);
+    crypto_wipe(pk, 32);
 
     // Reserve enough space for .priv and .pub
     FILE* fp;
@@ -220,6 +224,7 @@ int generate(char* base)
     if (fp == NULL
             || (fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk)))
         die("failed to write to private key file.\n");
+    crypto_wipe(b64_sk, sizeof(b64_sk));
     fclose(fp);
 
     // Write public key
@@ -228,10 +233,9 @@ int generate(char* base)
     if (fp == NULL
             || (fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk)))
         die("failed to write to public key file.\n");
+    crypto_wipe(b64_pk, sizeof(b64_pk));
     fclose(fp);
 
-    crypto_wipe(sk, 32);
-    crypto_wipe(pk, 32);
     free(path);
     return 0;
 }
