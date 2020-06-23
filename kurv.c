@@ -17,7 +17,7 @@
 //
 // Macros
 //
-#define READ_SIZE (1024 * 4096)
+#define READ_SIZE (4096)
 #define B64_KEY_SIZE 44  // b64_encoded_size(32)
 #define B64_SIG_SIZE 88  // b64_encoded_size(64)
 #define die(...) {\
@@ -34,6 +34,11 @@
     fwrite("kurv: ", 1, 7, stderr);\
     perror(prefix);\
 }
+#define setaction(c) {\
+    if (action != 0)\
+        die("invalid usage: see kurv -h.");\
+    action = (c);\
+}
 
 const uint8_t SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
 const uint8_t SIG_END[] =   "\n----END KURV SIGNATURE----\n";
@@ -41,19 +46,17 @@ const uint8_t USAGE[] =
     "usage:\n"
     "   kurv -h\n"
     "   kurv -g <name>\n"
-    "   kurv -s <file> -P <privkey>\n"
-    "   kurv -c <signed-file> [-p <pubkey>] [-io]\n"
-    "   kurv -d <signed-file>\n"
+    "   kurv -s|-c|-d [-P <privkey>] [-p <pubkey>] [file]\n"
     "\n"
     "options:\n"
     "   -h         show help page.\n"
     "   -g         generate keypair <name>.pub and <name>.priv.\n"
-    "   -P <key>   private key file for signing.\n"
-    "   -p <key>   public key file for checking.\n"
-    "   -s <file>  sign <file> using the key given.\n"
-    "   -c <signed-file> check signed file using the key given (if any)\n"
-    "                    if no key file is specified, try .pub files in\n"
-    "                    $KURV_KEYRING until we find a valid key.\n"
+    "   -P <key>   specify private key file.\n"
+    "   -p <key>   specify public key file.\n"
+    "   -s         sign <file> using the given private key.\n"
+    "   -c         check <file> using the key given (if any)\n"
+    "              if no key file is specified, try .pub files in\n"
+    "              $KURV_KEYRING until we find a valid key.\n"
     "   -i         output the <key> used upon successful check.\n"
     "   -o         output the file contents upon successful check.\n"
     "   -d         detach signature from the signed file.\n"
@@ -103,14 +106,12 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
         return NULL;
     }
 
-    size_t r = 0;
     size_t n;
     while (!feof(fp) && (n = fread(buf + total, sizeof(uint8_t), READ_SIZE, fp)) > 0) {
         total += n;
         if (size <= total) {
-            r++;
             // realloc
-            size += r * READ_SIZE;
+            size += 2 * READ_SIZE;
             uint8_t* new = reallocarray(buf, size, sizeof(uint8_t));
             if (new == NULL) {
                 err("kurv: realloc");
@@ -444,8 +445,6 @@ void keyfile_warn(char* fn, int is_priv)
 //
 FILE* fopen_or_die(const char* ctx, const char* fn)
 {
-    if (strcmp(fn, "-") == 0)
-        return stdin;
     FILE* fp = fopen(fn, "r");
     if (fp == NULL) {
         err("fopen");
@@ -458,25 +457,22 @@ FILE* fopen_or_die(const char* ctx, const char* fn)
 int main(int argc, char** argv)
 {
     char* pk_fn  = "";   // neeed for should_show_id
-    FILE* fp     = NULL;
+    FILE* fp     = stdin;
     FILE* pk_fp  = NULL;
     FILE* sk_fp  = NULL;
     char* base   = NULL;
-    char  action = '0';
+    char  action = 0;
     int should_show_id = 0;
     int should_show_og = 0;
     int c;
-    while ((c = getopt(argc, argv, "hg:s:c:d:p:P:io")) != -1)
+    while ((c = getopt(argc, argv, "hg:scdp:P:io")) != -1)
         switch (c) {
             default:  exit(1);
             case 'h': fwrite(USAGE, sizeof(char), sizeof(USAGE), stdout); exit(0); break;
-            case 'g':
-                action = 'g';
-                base = optarg;
-                break;
-            case 's': action = 's'; fp = fopen_or_die("signing",  optarg); break;
-            case 'c': action = 'c'; fp = fopen_or_die("checking", optarg); break;
-            case 'd': action = 'd'; fp = fopen_or_die("detach", optarg);   break;
+            case 'g': setaction('g'); base = optarg; break;
+            case 's': setaction('s'); break;
+            case 'c': setaction('c'); break;
+            case 'd': setaction('d'); break;
             case 'P': keyfile_warn(optarg, 1); sk_fp = fopen_or_die("private key", optarg); break;
             case 'p': keyfile_warn(optarg, 0); pk_fp = fopen_or_die("public key",  optarg);
                       pk_fn = optarg;
@@ -486,26 +482,35 @@ int main(int argc, char** argv)
         }
 
     int rv = 1;
-    switch (action) {
-        default: die("invalid usage. see kurv -h."); break;
-        case 'g':
-            rv = generate(base);
-            break;
-        case 's':
-            if (sk_fp == NULL) die("no private key file specified.");
-            if (fp == NULL)    die("no file specified.");
-            rv = sign(fp, sk_fp);
-            break;
-        case 'c':
-            if (fp == NULL) die("no file specified.");
-            rv = (pk_fp == NULL)
-                ? check_keyring(fp, should_show_id, should_show_og)
-                : check(fp, pk_fp, pk_fn, should_show_id, should_show_og);
-            break;
-        case 'd':
-            if (fp == NULL) die("no file specified.");
-            rv = detach(fp);
-            break;
+    if (action == 0) {
+        die("invalid usage. see kurv -h.");
+    } else if (action == 'g') {
+        rv = generate(base);
+    } else {
+        // Read one argument
+        if (optind < argc) {
+            if (optind + 1 != argc) die("invalid usage. see kurv -h.");
+            char* fn = argv[optind];
+            switch (action) {
+                case 's': fp = fopen_or_die("signing", fn); break;
+                case 'c': fp = fopen_or_die("checking", fn); break;
+                case 'd': fp = fopen_or_die("detach", fn); break;
+            }
+        }
+        switch (action) {
+            case 's':
+                if (sk_fp == NULL) die("no private key file specified.");
+                rv = sign(fp, sk_fp);
+                break;
+            case 'c':
+                rv = (pk_fp == NULL)
+                    ? check_keyring(fp, should_show_id, should_show_og)
+                    : check(fp, pk_fp, pk_fn, should_show_id, should_show_og);
+                break;
+            case 'd':
+                rv = detach(fp);
+                break;
+        }
     }
     // If all goes well we close everything and exit.
     if (fp != NULL)    fclose(fp);
