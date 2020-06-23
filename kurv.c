@@ -14,7 +14,7 @@
 //
 // Macros
 //
-#define READ_SIZE 50
+#define READ_SIZE (1024 * 4096)
 #define B64_KEY_SIZE 44  // b64_encoded_size(32)
 #define B64_SIG_SIZE 88  // b64_encoded_size(64)
 #define die(...) {\
@@ -62,8 +62,7 @@ int read_exactly(uint8_t* buf, const size_t n, FILE* fp)
 int decode_exactly(      uint8_t* buf, size_t bufsize,
                    const uint8_t* b64, size_t b64size)
 {
-    if (b64_decoded_size(b64, b64size) != bufsize
-            || b64_validate(b64, b64size) != 0)
+    if (b64_validate(b64, b64size) != 0 || b64_decoded_size(b64, b64size) != bufsize)
         return -1;
     b64_decode(buf, b64, b64size);
     return 0;
@@ -211,14 +210,14 @@ int generate(char* base)
     size_t len = strlen(base);
     char* path = calloc(len + 5 + 1, sizeof(char));
     if (path == NULL)
-        die("malloc failed\n");
+        die("malloc failed.\n");
 
     // Write private key
     concat(path, base, len, ".priv", 5);
     fp = fopen(path, "w");
     if (fp == NULL
             || (fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk)))
-        die("failed to write to private key file\n");
+        die("failed to write to private key file.\n");
     fclose(fp);
 
     // Write public key
@@ -226,7 +225,7 @@ int generate(char* base)
     fp = fopen(path, "w");
     if (fp == NULL
             || (fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk)))
-        die("failed to write to public key file\n");
+        die("failed to write to public key file.\n");
     fclose(fp);
 
     free(path);
