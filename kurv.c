@@ -46,6 +46,8 @@ const uint8_t USAGE[] =
     "   -d         detach signature from the signed file.\n"
     "\n"
     ;
+#define SIG_START_LEN (sizeof(SIG_START)-1)
+#define SIG_END_LEN   (sizeof(SIG_END)-1)
 
 //
 // Read exactly n bytes into buf.
@@ -113,23 +115,23 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
 
 //
 // Try to find the b64 signature in the buffer, write
-// raw signature to signature. Returns the new buffer size
-// (without the signature part).
+// raw signature to signature, and write the new buffer
+// size (w/o signature to &bufsize).
 //
 int find_signature(uint8_t signature[64], const uint8_t* buf, size_t* bufsize)
 {
-    size_t start_size = sizeof(SIG_START) - 1,
+    size_t start_size = SIG_START_LEN,
            sig_size   = B64_SIG_SIZE,
-           end_size   = sizeof(SIG_END) - 1,
+           end_size   = SIG_END_LEN,
            total      = start_size + sig_size + end_size;
 
     uint8_t b64_sig[B64_SIG_SIZE];
 
     // Cannot find signature...
     size_t size = *bufsize;
-    if ((size < total)
-            || (memcmp(SIG_END,   buf + size - end_size, end_size) != 0)
-            || (memcmp(SIG_START, buf + size - total,  start_size) != 0))
+    if (size < total
+            || memcmp(SIG_END,   buf + size - end_size, end_size) != 0
+            || memcmp(SIG_START, buf + size - total,  start_size) != 0)
         return -1;
     // Copy to b64_sig
     memcpy(b64_sig, buf + size - sig_size - end_size, sig_size);
@@ -147,9 +149,9 @@ int find_signature(uint8_t signature[64], const uint8_t* buf, size_t* bufsize)
 //
 int find_key(uint8_t key[32], const uint8_t* buf, size_t bufsize)
 {
-    if ((bufsize < B64_KEY_SIZE)
-            || (decode_exactly(key, 32,
-                               buf, B64_KEY_SIZE)) != 0)
+    if (bufsize < B64_KEY_SIZE
+            || decode_exactly(key, 32,
+                              buf, B64_KEY_SIZE) != 0)
         return -1;
     return 0;
 }
@@ -160,8 +162,8 @@ int find_key(uint8_t key[32], const uint8_t* buf, size_t bufsize)
 int find_key_in_file(uint8_t key[32], FILE* fp)
 {
     uint8_t b64_key[B64_KEY_SIZE];
-    if ((read_exactly(b64_key, B64_KEY_SIZE, fp) != 0)
-        || (find_key(key, b64_key, sizeof(b64_key)) != 0)) {
+    if (read_exactly(b64_key, B64_KEY_SIZE, fp) != 0
+            || find_key(key, b64_key, sizeof(b64_key)) != 0) {
         crypto_wipe(b64_key, sizeof(b64_key));
         return -1;
     }
@@ -222,7 +224,7 @@ int generate(char* base)
     concat(path, base, len, ".priv", 5);
     fp = fopen(path, "w");
     if (fp == NULL
-            || (fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk)))
+            || fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk))
         die("failed to write to private key file.\n");
     crypto_wipe(b64_sk, sizeof(b64_sk));
     fclose(fp);
@@ -231,7 +233,7 @@ int generate(char* base)
     concat(path, base, len, ".pub", 4);
     fp = fopen(path, "w");
     if (fp == NULL
-            || (fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk)))
+            || fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk))
         die("failed to write to public key file.\n");
     crypto_wipe(b64_pk, sizeof(b64_pk));
     fclose(fp);
@@ -273,10 +275,10 @@ int sign(FILE* fp, FILE* sk_fp)
     crypto_wipe(sk, 32);
     crypto_wipe(pk, 32);
 
-    fwrite(msg,       sizeof(uint8_t), msg_size,            stdout);
-    fwrite(SIG_START, sizeof(uint8_t), sizeof(SIG_START)-1, stdout);
-    fwrite(b64_sig,   sizeof(uint8_t), sizeof(b64_sig),     stdout);
-    fwrite(SIG_END,   sizeof(uint8_t), sizeof(SIG_END)-1,   stdout);
+    fwrite(msg,       sizeof(uint8_t), msg_size,        stdout);
+    fwrite(SIG_START, sizeof(uint8_t), SIG_START_LEN,   stdout);
+    fwrite(b64_sig,   sizeof(uint8_t), sizeof(b64_sig), stdout);
+    fwrite(SIG_END,   sizeof(uint8_t), SIG_END_LEN,     stdout);
     free(msg);
     return 0;
 }
@@ -300,7 +302,7 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
     if (msg == NULL)
         die("error reading file.\n");
 
-    if ((find_signature(sig, msg, &msg_size)) < 0)
+    if (find_signature(sig, msg, &msg_size) < 0)
         die("cannot find / malformed signature.\n");
 
     // Allocate enough for FNAME + 1 + 1 (NUL byte + '/' if necessary)
@@ -369,7 +371,7 @@ int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_sho
     if (msg == NULL)
         die("error reading file.\n");
 
-    if ((find_signature(sig, msg, &msg_size)) < 0)
+    if (find_signature(sig, msg, &msg_size) < 0)
         die("cannot find / malformed signature.\n");
 
     if (crypto_check(sig,
