@@ -1,3 +1,6 @@
+ifeq ($(PREFIX),)
+    PREFIX := /usr/local
+endif
 CC=gcc
 CFLAGS=-Wall -O3 -I. -march=native
 
@@ -5,17 +8,7 @@ CFLAGS=-Wall -O3 -I. -march=native
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 kurv: kurv.o base64.o monocypher/monocypher.o
-	$(CC) -o kurv \
-		monocypher/monocypher.o \
-		kurv.o \
-		base64.o
-
-debug:
-	$(CC) -o kurv \
-		monocypher/monocypher.c \
-		kurv.c \
-		base64.c \
-		-Og -g
+	$(CC) -o kurv $^
 
 clean:
 	-rm kurv
@@ -27,3 +20,10 @@ tests: kurv
 	bats test.sh
 
 all: clean kurv tests
+
+install: kurv
+	install -d $(DESTDIR)$(PREFIX)/bin/
+	install ./kurv $(DESTDIR)$(PREFIX)/bin/kurv
+
+uninstall:
+	rm $(DESTDIR)$(PREFIX)/bin/kurv

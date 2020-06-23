@@ -103,7 +103,6 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
     size_t total = 0;           // total buffer size
     size_t size = READ_SIZE;    // current buffer size
     uint8_t* buf = calloc(size, sizeof(uint8_t));
-
     if (buf == NULL) {
         err("kurv: calloc");
         return NULL;
@@ -124,7 +123,6 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
         }
     }
 
-    // error occured reading file
     if (ferror(fp)) {
         err("kurv: fread");
         free(buf);
@@ -201,7 +199,6 @@ int str_endswith(const char* src, const char* suffix)
     return memcmp(src + src_size - suffix_size, suffix, suffix_size);
 }
 
-
 //
 // Needed for generate(...): version of fopen supporting flags
 //
@@ -273,7 +270,6 @@ int generate(char* base)
     return 0;
 }
 
-
 //
 // Sign a given file stream with the given signature stream sk_fp.
 //
@@ -312,7 +308,6 @@ int sign(FILE* fp, FILE* sk_fp)
     free(msg);
     return 0;
 }
-
 
 //
 // Check against keyring
@@ -380,7 +375,6 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
     exit(1);
 }
 
-
 //
 // Check that a file is signed by a given pk_fp
 //
@@ -413,7 +407,6 @@ int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_sho
     return 0;
 }
 
-
 //
 // Detach a signature from the file.
 //
@@ -433,7 +426,6 @@ int detach(FILE* fp)
     return 0;
 }
 
-
 //
 // Warn if user specified a .priv instead of .pub
 // or vice versa.
@@ -445,7 +437,6 @@ void keyfile_warn(char* fn, int is_priv)
                 is_priv ? "private" : "public",
                 is_priv ? ".priv" : ".pub");
 }
-
 
 //
 // Utility for opening a file or dying
@@ -459,7 +450,6 @@ FILE* fopen_or_die(const char* ctx, const char* fn)
     }
     return fp;
 }
-
 
 int main(int argc, char** argv)
 {
