@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-O3 -I. -march=native
+CFLAGS=-Wall -O3 -I. -march=native
 
 %.o: %.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
@@ -21,7 +21,9 @@ clean:
 	-rm kurv
 	-rm *.o
 	-rm monocypher/*.o
-	-rm test
+	-rm -rf test
 
 tests: kurv
 	bats test.sh
+
+all: clean kurv tests

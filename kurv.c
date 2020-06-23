@@ -8,6 +8,9 @@
 #include <unistd.h>
 #include <dirent.h>
 
+#include <sys/stat.h>
+#include <fcntl.h>
+
 #include "base64.h"
 #include "monocypher/monocypher.h"
 
@@ -18,8 +21,18 @@
 #define B64_KEY_SIZE 44  // b64_encoded_size(32)
 #define B64_SIG_SIZE 88  // b64_encoded_size(64)
 #define die(...) {\
+    fwrite("kurv: ", 1, 7, stderr);\
     fprintf(stderr, __VA_ARGS__);\
+    fwrite("\n", 1, 1, stderr);\
     exit(1);\
+}
+#define errdie(prefix) {\
+    err(prefix);\
+    exit(1);\
+}
+#define err(prefix) {\
+    fwrite("kurv: ", 1, 7, stderr);\
+    perror(prefix);\
 }
 
 const uint8_t SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
@@ -29,7 +42,7 @@ const uint8_t USAGE[] =
     "   kurv -h\n"
     "   kurv -g <name>\n"
     "   kurv -s <file> -P <privkey>\n"
-    "   kurv -c <signed-file> [-p <pubkey>] [-i] [-o]\n"
+    "   kurv -c <signed-file> [-p <pubkey>] [-io]\n"
     "   kurv -d <signed-file>\n"
     "\n"
     "options:\n"
@@ -55,8 +68,10 @@ const uint8_t USAGE[] =
 //
 int read_exactly(uint8_t* buf, const size_t n, FILE* fp)
 {
-    if (fread(buf, 1, n, fp) != n)
+    if (fread(buf, 1, n, fp) != n) {
+        err("kurv: fread");
         return -1;
+    }
     return 0;
 }
 
@@ -83,12 +98,14 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
     size_t size = READ_SIZE;    // current buffer size
     uint8_t* buf = malloc(size);
 
-    if (buf == NULL)
+    if (buf == NULL) {
+        err("kurv: malloc");
         return NULL;
+    }
 
     size_t r = 0;
     size_t n;
-    while (!feof(fp) && ((n = fread(buf + total, sizeof(uint8_t), READ_SIZE, fp)) > 0)) {
+    while (!feof(fp) && (n = fread(buf + total, sizeof(uint8_t), READ_SIZE, fp)) > 0) {
         total += n;
         if (size <= total) {
             r++;
@@ -96,6 +113,7 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
             size += r * READ_SIZE;
             uint8_t* new = reallocarray(buf, size, sizeof(uint8_t));
             if (new == NULL) {
+                err("kurv: realloc");
                 free(buf);
                 return NULL;
             }
@@ -105,6 +123,7 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
 
     // error occured reading file
     if (ferror(fp)) {
+        err("kurv: fread");
         free(buf);
         return NULL;
     }
@@ -194,6 +213,21 @@ int endswith(const char* src, const char* suffix)
     return memcmp(src + src_size - suffix_size, suffix, suffix_size);
 }
 
+
+//
+// Needed for generate(...): version of fopen supporting flags
+//
+FILE* safe_fopen_w(char* fn, int o_mode)
+{
+    int flags = O_WRONLY | O_CREAT | O_TRUNC;
+    int fd = open(fn, flags, o_mode);
+    if (fd == -1) {
+        err("open");
+        return NULL;
+    }
+    return fdopen(fd, "w");
+}
+
 //
 // Generates keypair at <base>.priv and <base>.pub
 //
@@ -205,7 +239,7 @@ int generate(char* base)
             b64_pk[B64_KEY_SIZE];
     // Try to generate a random key
     if (getrandom(sk, 32, 0) < 0)
-        return -1;
+        errdie("getrandom");
 
     crypto_sign_public_key(pk, sk);
     b64_encode(b64_sk, sk, 32);
@@ -218,23 +252,25 @@ int generate(char* base)
     size_t len = strlen(base);
     char* path = calloc(len + 5 + 1, sizeof(char));
     if (path == NULL)
-        die("malloc failed.\n");
+        errdie("calloc");
 
     // Write private key
     concat(path, base, len, ".priv", 5);
-    fp = fopen(path, "w");
+    fp = safe_fopen_w(path, S_IWUSR | S_IRUSR | S_IRGRP);
     if (fp == NULL
-            || fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk))
-        die("failed to write to private key file.\n");
+            || fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk)
+            || fwrite("\n", 1, 1, fp) < 0)
+        errdie("cannot write private key");
     crypto_wipe(b64_sk, sizeof(b64_sk));
     fclose(fp);
 
     // Write public key
     concat(path, base, len, ".pub", 4);
-    fp = fopen(path, "w");
+    fp = safe_fopen_w(path, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
     if (fp == NULL
-            || fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk))
-        die("failed to write to public key file.\n");
+            || fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk)
+            || fwrite("\n", 1, 1, fp) < 0)
+        errdie("cannot write public key");
     crypto_wipe(b64_pk, sizeof(b64_pk));
     fclose(fp);
 
@@ -257,14 +293,14 @@ int sign(FILE* fp, FILE* sk_fp)
 
     if (find_key_in_file(sk, sk_fp) == -1) {
         crypto_wipe(sk, 32);
-        die("invalid private key.\n");
+        die("invalid private key.");
     }
 
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL) {
         crypto_wipe(sk, 32);
-        die("error reading file.\n");
+        errdie("cannot read file");
     }
 
     crypto_sign_public_key(pk, sk);
@@ -300,15 +336,15 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL)
-        die("error reading file.\n");
+        die("error reading file.");
 
     if (find_signature(sig, msg, &msg_size) < 0)
-        die("cannot find / malformed signature.\n");
+        die("cannot find / malformed signature.");
 
     // Allocate enough for FNAME + 1 + 1 (NUL byte + '/' if necessary)
     char* path = malloc(keyring_dir_len + NAME_MAX + 2);
     if (path == NULL)
-        die("malloc() failed.\n");
+        errdie("malloc");
 
     memcpy(path, keyring_dir, keyring_dir_len);
     if (keyring_dir[keyring_dir_len - 1] != '/') {
@@ -320,7 +356,7 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
     DIR* dir = opendir(keyring_dir);
     struct dirent *dp;
     if (dir == NULL)
-        die("opendir() failed.\n");
+        errdie("opendir");
 
     while ((dp = readdir(dir)) != NULL) {
         // Check that file ends with .pub
@@ -348,7 +384,7 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
         exit(0);
     }
 
-    die("cannot find a signer.\n");
+    die("cannot find a signer.");
     exit(1);
 }
 
@@ -364,20 +400,20 @@ int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_sho
             sig [64];
 
     if (find_key_in_file(pk, pk_fp) == -1)
-        die("invalid public key.\n");
+        die("invalid public key.");
 
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL)
-        die("error reading file.\n");
+        die("error reading file.");
 
     if (find_signature(sig, msg, &msg_size) < 0)
-        die("cannot find / malformed signature.\n");
+        die("cannot find / malformed signature.");
 
     if (crypto_check(sig,
                      pk,
                      msg, msg_size) != 0)
-        die("invalid signature.\n");
+        die("invalid signature.");
 
     if (should_show_id) printf("%s\n", pk_fn);
     if (should_show_og) fwrite(msg, sizeof(char), msg_size, stdout);
@@ -394,11 +430,11 @@ int detach(FILE* fp)
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL)
-        die("error reading file.\n");
+        die("error reading file.");
 
     uint8_t sig[64]; // unusued
     if (find_signature(sig, msg, &msg_size) < 0)
-        die("cannot find / malformed signature.\n");
+        die("cannot find / malformed signature.");
 
     fwrite(msg, sizeof(uint8_t), msg_size, stdout);
     free(msg);
@@ -407,15 +443,33 @@ int detach(FILE* fp)
 
 
 //
-// Utiltiy for opening a file or dying
+// Warn if user specified a .priv instead of .pub
+// or vice versa.
+//
+void fopen_warn(char* fn, int is_priv)
+{
+    if (endswith(fn, is_priv ? ".priv" : ".pub") != 0) {
+        if (is_priv) {
+            fprintf(stderr, "kurv: warning: private key file doesn't end in .priv\n");
+        } else {
+            fprintf(stderr, "kurv: warning: public key file doesn't end in .pub\n");
+        }
+    }
+}
+
+
+//
+// Utility for opening a file or dying
 //
 FILE* fopen_or_die(const char* ctx, const char* fn)
 {
     if (strcmp(fn, "-") == 0)
         return stdin;
     FILE* fp = fopen(fn, "r");
-    if (fp == NULL)
-        die("cannot open %s: %s\n", fn, ctx);
+    if (fp == NULL) {
+        err("fopen");
+        die("cannot open '%s' for %s.", fn, ctx);
+    }
     return fp;
 }
 
@@ -439,11 +493,15 @@ int main(int argc, char** argv)
                 action = 'g';
                 base = optarg;
                 break;
-            case 's': action = 's'; fp = fopen_or_die("file for signing",  optarg); break;
-            case 'c': action = 'c'; fp = fopen_or_die("file for checking", optarg); break;
-            case 'd': action = 'd'; fp = fopen_or_die("file for detach", optarg);   break;
-            case 'P': sk_fp = fopen_or_die("private key file", optarg); break;
+            case 's': action = 's'; fp = fopen_or_die("signing",  optarg); break;
+            case 'c': action = 'c'; fp = fopen_or_die("checking", optarg); break;
+            case 'd': action = 'd'; fp = fopen_or_die("detach", optarg);   break;
+            case 'P':
+                fopen_warn(optarg, 1);
+                sk_fp = fopen_or_die("private key file", optarg);
+                break;
             case 'p':
+                fopen_warn(optarg, 0);
                 pk_fp = fopen_or_die("public key file",  optarg);
                 pk_fn = optarg;
                 break;
@@ -453,23 +511,23 @@ int main(int argc, char** argv)
 
     int rv = 1;
     switch (action) {
-        default: die("invalid usage. see kurv -h.\n"); break;
+        default: die("invalid usage. see kurv -h."); break;
         case 'g':
             rv = generate(base);
             break;
         case 's':
-            if (sk_fp == NULL) die("no private key file specified.\n");
-            if (fp == NULL)    die("no file specified.\n");
+            if (sk_fp == NULL) die("no private key file specified.");
+            if (fp == NULL)    die("no file specified.");
             rv = sign(fp, sk_fp);
             break;
         case 'c':
-            if (fp == NULL) die("no file specified.\n");
+            if (fp == NULL) die("no file specified.");
             rv = (pk_fp == NULL)
                 ? check_keyring(fp, should_show_id, should_show_og)
                 : check(fp, pk_fp, pk_fn, should_show_id, should_show_og);
             break;
         case 'd':
-            if (fp == NULL) die("no file specified.\n");
+            if (fp == NULL) die("no file specified.");
             rv = detach(fp);
             break;
     }
