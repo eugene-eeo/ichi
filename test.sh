@@ -86,16 +86,14 @@ $(cat README)" ]
         run kurv -c test/output.txt
         [ "$status" -ne 0 ]
 
-        bname=$(basename "$id")
-
         KURV_KEYRING="test/keyring/" run kurv -c test/output.txt -i
         [ "$status" -eq 0 ]
-        [ "$output" = "$bname.pub" ]
+        [ "$output" = "$id.pub" ]
 
         # KURV_KEYRING without ending slash
         KURV_KEYRING="test/keyring" run kurv -c test/output.txt -i
         [ "$status" -eq 0 ]
-        [ "$output" = "$bname.pub" ]
+        [ "$output" = "$id.pub" ]
     done
 }
 

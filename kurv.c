@@ -354,7 +354,11 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
         }
 
         // Found it
-        if (should_show_id) printf("%s\n", dp->d_name);
+        if (should_show_id)
+            printf("%s%s%s\n",
+                   keyring_dir,
+                   keyring_dir[keyring_dir_len-1] == '/' ? "" : "/",
+                   dp->d_name);
         if (should_show_og) fwrite(msg, sizeof(char), msg_size, stdout);
         exit(0);
     }
