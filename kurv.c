@@ -180,9 +180,10 @@ void concat(char* dst, const char* a, size_t a_size,
 //
 // Check if a string src ends with suffix
 //
-int endswith(const char* src,    size_t src_size,
-             const char* suffix, size_t suffix_size)
+int endswith(const char* src, const char* suffix)
 {
+    size_t src_size    = strlen(src),
+           suffix_size = strlen(suffix);
     if (src_size < suffix_size)
         return -1;
     return memcmp(src + src_size - suffix_size, suffix, suffix_size);
@@ -296,7 +297,7 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
         die("cannot find / malformed signature.\n");
 
     // Allocate enough for FNAME + 1 + 1 (NUL byte + '/' if necessary)
-    char* path = malloc(keyring_dir_len + 255 + 2);
+    char* path = malloc(keyring_dir_len + NAME_MAX + 2);
     if (path == NULL)
         die("malloc() failed.\n");
 
@@ -313,15 +314,14 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
         die("opendir() failed.\n");
 
     while ((dp = readdir(dir)) != NULL) {
-        if (strcmp(dp->d_name, ".") == 0 || strcmp(dp->d_name, "..") == 0)
+        // Check that file ends with .pub
+        if (strcmp(dp->d_name, ".") == 0
+                || strcmp(dp->d_name, "..") == 0
+                || endswith(dp->d_name, ".pub") != 0)
             continue;
 
-        // Check if we can safely concat...
-        size_t len = strlen(dp->d_name);
-        if (len > 255)
-            continue;
-        memcpy(path + keyring_dir_len, dp->d_name, len);
-        path[keyring_dir_len + len] = 0;
+        memcpy(path + keyring_dir_len,
+               dp->d_name, strlen(dp->d_name) + 1); // copy over NUL byte as well.
 
         // Try to read public key files (ignoring errors)
         uint8_t pk[32];
@@ -333,6 +333,7 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
             continue;
         }
 
+        // Found it
         if (should_show_id) printf("%s\n", dp->d_name);
         if (should_show_og) fwrite(msg, sizeof(char), msg_size, stdout);
         exit(0);
