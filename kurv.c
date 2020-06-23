@@ -246,20 +246,22 @@ int generate(char* base)
     fp = safe_fopen_w(path, S_IWUSR | S_IRUSR | S_IRGRP);
     if (fp == NULL
             || fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk)
-            || fwrite("\n", 1, 1, fp) < 0)
+            || fwrite("\n", 1, 1, fp) < 0
+            || fclose(fp) != 0)
         errdie("cannot write private key");
     crypto_wipe(b64_sk, sizeof(b64_sk));
-    fclose(fp);
+    printf("kurv: wrote private key in '%s'.\n", path);
 
     // Write public key
     concat(path, base, len, ".pub", 4);
     fp = safe_fopen_w(path, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
     if (fp == NULL
             || fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk)
-            || fwrite("\n", 1, 1, fp) < 0)
+            || fwrite("\n", 1, 1, fp) < 0
+            || fclose(fp) != 0)
         errdie("cannot write public key");
     crypto_wipe(b64_pk, sizeof(b64_pk));
-    fclose(fp);
+    printf("kurv: wrote public key in '%s'.\n", path);
 
     free(path);
     return 0;
@@ -359,7 +361,7 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
                    keyring_dir,
                    keyring_dir[keyring_dir_len-1] == '/' ? "" : "/",
                    dp->d_name);
-        if (should_show_og) fwrite(msg, sizeof(char), msg_size, stdout);
+        if (should_show_og) fwrite(msg, sizeof(uint8_t), msg_size, stdout);
         exit(0);
     }
 
@@ -395,7 +397,7 @@ int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_sho
         die("invalid signature.");
 
     if (should_show_id) printf("%s\n", pk_fn);
-    if (should_show_og) fwrite(msg, sizeof(char), msg_size, stdout);
+    if (should_show_og) fwrite(msg, sizeof(uint8_t), msg_size, stdout);
     free(msg);
     return 0;
 }
@@ -425,7 +427,7 @@ int detach(FILE* fp)
 // Warn if user specified a .priv instead of .pub
 // or vice versa.
 //
-void fopen_warn(char* fn, int is_priv)
+void keyfile_warn(char* fn, int is_priv)
 {
     if (endswith(fn, is_priv ? ".priv" : ".pub") != 0) {
         if (is_priv) {
@@ -475,15 +477,10 @@ int main(int argc, char** argv)
             case 's': action = 's'; fp = fopen_or_die("signing",  optarg); break;
             case 'c': action = 'c'; fp = fopen_or_die("checking", optarg); break;
             case 'd': action = 'd'; fp = fopen_or_die("detach", optarg);   break;
-            case 'P':
-                fopen_warn(optarg, 1);
-                sk_fp = fopen_or_die("private key file", optarg);
-                break;
-            case 'p':
-                fopen_warn(optarg, 0);
-                pk_fp = fopen_or_die("public key file",  optarg);
-                pk_fn = optarg;
-                break;
+            case 'P': keyfile_warn(optarg, 1); sk_fp = fopen_or_die("private key", optarg); break;
+            case 'p': keyfile_warn(optarg, 0); pk_fp = fopen_or_die("public key",  optarg);
+                      pk_fn = optarg;
+                      break;
             case 'i': should_show_id = 1; break;
             case 'o': should_show_og = 1; break;
         }
