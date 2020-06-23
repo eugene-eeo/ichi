@@ -230,6 +230,8 @@ int generate(char* base)
         die("failed to write to public key file.\n");
     fclose(fp);
 
+    crypto_wipe(sk, 32);
+    crypto_wipe(pk, 32);
     free(path);
     return 0;
 }
@@ -426,7 +428,7 @@ int main(int argc, char** argv)
     while ((c = getopt(argc, argv, "hg:s:c:d:p:P:io")) != -1)
         switch (c) {
             default:  exit(1);
-            case 'h': fwrite(USAGE, sizeof(char), sizeof(USAGE), stdout);
+            case 'h': fwrite(USAGE, sizeof(char), sizeof(USAGE), stdout); exit(0); break;
             case 'g':
                 action = 'g';
                 base = optarg;
@@ -445,6 +447,7 @@ int main(int argc, char** argv)
 
     int rv = 1;
     switch (action) {
+        default: die("invalid usage. see kurv -h.\n"); break;
         case 'g':
             rv = generate(base);
             break;
