@@ -27,12 +27,12 @@
     exit(1);\
 }
 #define errdie(prefix) {\
-    err(prefix);\
+    err((prefix));\
     exit(1);\
 }
 #define err(prefix) {\
     fwrite("kurv: ", 1, 7, stderr);\
-    perror(prefix);\
+    perror((prefix));\
 }
 #define setaction(c) {\
     if (action != 0)\
@@ -59,10 +59,11 @@ const uint8_t USAGE[] =
     "   -c        Check <file> using optional public key.\n"
     "             If no public key is specified, search for a\n"
     "             valid public key (file ending in .pub) in \n"
-    "             $KURV_KEYRING."
+    "             $KURV_KEYRING.\n"
     "   -i        Print the key used upon successful check.\n"
     "   -o        Print file contents upon successful check.\n"
     "   -d        Detach signature from the signed file.\n"
+    "\n"
     ;
 #define SIG_START_LEN (sizeof(SIG_START)-1)
 #define SIG_END_LEN   (sizeof(SIG_END)-1)
@@ -101,10 +102,10 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
 {
     size_t total = 0;           // total buffer size
     size_t size = READ_SIZE;    // current buffer size
-    uint8_t* buf = malloc(size);
+    uint8_t* buf = calloc(size, sizeof(uint8_t));
 
     if (buf == NULL) {
-        err("kurv: malloc");
+        err("kurv: calloc");
         return NULL;
     }
 
@@ -112,11 +113,10 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
     while (!feof(fp) && (n = fread(buf + total, sizeof(uint8_t), READ_SIZE, fp)) > 0) {
         total += n;
         if (size <= total) {
-            // realloc
             size += 2 * READ_SIZE;
             uint8_t* new = reallocarray(buf, size, sizeof(uint8_t));
             if (new == NULL) {
-                err("kurv: realloc");
+                err("kurv: reallocarray");
                 free(buf);
                 return NULL;
             }
@@ -140,28 +140,26 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
 // raw signature to signature, and write the new buffer
 // size (w/o signature to &bufsize).
 //
-int find_signature(uint8_t signature[64], const uint8_t* buf, size_t* bufsize)
+int find_signature(uint8_t signature[64], const uint8_t* buf, size_t* bufsize_ptr)
 {
     size_t start_size = SIG_START_LEN,
            sig_size   = B64_SIG_SIZE,
            end_size   = SIG_END_LEN,
-           total      = start_size + sig_size + end_size;
+           sig_total  = start_size + sig_size + end_size,
+           bufsize    = *bufsize_ptr;
 
     uint8_t b64_sig[B64_SIG_SIZE];
 
-    // Cannot find signature...
-    size_t size = *bufsize;
-    if (size < total
-            || memcmp(SIG_END,   buf + size - end_size, end_size) != 0
-            || memcmp(SIG_START, buf + size - total,  start_size) != 0)
+    if (bufsize < sig_total
+            || memcmp(SIG_END,   buf + bufsize - end_size, end_size) != 0
+            || memcmp(SIG_START, buf + bufsize - sig_total, start_size) != 0)
         return -1;
-    // Copy to b64_sig
-    memcpy(b64_sig, buf + size - sig_size - end_size, sig_size);
-    // Invalid signature encoding
+
+    memcpy(b64_sig, buf + bufsize - sig_size - end_size, sig_size);
     if (decode_exactly(signature, 64,
                        b64_sig, B64_SIG_SIZE) != 0)
         return -1;
-    *bufsize = size - total;
+    *bufsize_ptr = bufsize - sig_total;
     return 0;
 }
 
@@ -181,11 +179,11 @@ int find_key_in_file(uint8_t key[32], FILE* fp)
 
 //
 // Concatenate a with b, adding the NUL byte at the end.
-// Input dst must have size >= a_size + b_size + 1.
 //
-void concat(char* dst, const char* a, size_t a_size,
-                       const char* b, size_t b_size)
+void str_concat(char* dst, const char* a, const char* b)
 {
+    size_t a_size = strlen(a),
+           b_size = strlen(b);
     memcpy(dst,          a, a_size);
     memcpy(dst + a_size, b, b_size);
     dst[a_size + b_size] = 0;
@@ -194,7 +192,7 @@ void concat(char* dst, const char* a, size_t a_size,
 //
 // Check if a string src ends with suffix
 //
-int endswith(const char* src, const char* suffix)
+int str_endswith(const char* src, const char* suffix)
 {
     size_t src_size    = strlen(src),
            suffix_size = strlen(suffix);
@@ -233,7 +231,6 @@ int generate(char* base)
             pk[32],
             b64_sk[B64_KEY_SIZE],
             b64_pk[B64_KEY_SIZE];
-    // Try to generate a random key
     if (getrandom(sk, 32, 0) < 0)
         errdie("getrandom");
 
@@ -251,7 +248,7 @@ int generate(char* base)
         errdie("calloc");
 
     // Write private key
-    concat(path, base, len, ".priv", 5);
+    str_concat(path, base, ".priv");
     fp = safe_fopen_w(path, S_IWUSR | S_IRUSR | S_IRGRP);
     if (fp == NULL
             || fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk)
@@ -259,10 +256,10 @@ int generate(char* base)
             || fclose(fp) != 0)
         errdie("cannot write private key");
     crypto_wipe(b64_sk, sizeof(b64_sk));
-    printf("kurv: wrote private key in '%s'.\n", path);
+    fprintf(stderr, "kurv: wrote private key in '%s'.\n", path);
 
     // Write public key
-    concat(path, base, len, ".pub", 4);
+    str_concat(path, base, ".pub");
     fp = safe_fopen_w(path, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
     if (fp == NULL
             || fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk)
@@ -270,7 +267,7 @@ int generate(char* base)
             || fclose(fp) != 0)
         errdie("cannot write public key");
     crypto_wipe(b64_pk, sizeof(b64_pk));
-    printf("kurv: wrote public key in '%s'.\n", path);
+    fprintf(stderr, "kurv: wrote public key in '%s'.\n", path);
 
     free(path);
     return 0;
@@ -282,7 +279,6 @@ int generate(char* base)
 //
 int sign(FILE* fp, FILE* sk_fp)
 {
-    // Try to read sk
     // Make sure to crypto_wipe!
     uint8_t sk      [32],
             pk      [32],  // used when computing signature
@@ -323,7 +319,6 @@ int sign(FILE* fp, FILE* sk_fp)
 //
 int check_keyring(FILE* fp, int should_show_id, int should_show_og)
 {
-    // Check if KURV_KEYRING is set.
     char* keyring_dir = getenv("KURV_KEYRING");
     if (keyring_dir == NULL)
         die("$KURV_KEYRING is not set.");
@@ -338,7 +333,6 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
     if (find_signature(sig, msg, &msg_size) < 0)
         die("cannot find / malformed signature.");
 
-    // Find a matching key
     DIR* dir = opendir(keyring_dir);
     struct dirent *dp;
     if (dir == NULL) {
@@ -350,20 +344,15 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
         errdie("dirfd");
 
     while ((dp = readdir(dir)) != NULL) {
-        // Check that file ends with .pub
         if (strcmp(dp->d_name, ".") == 0
                 || strcmp(dp->d_name, "..") == 0
-                || endswith(dp->d_name, ".pub") != 0)
+                || str_endswith(dp->d_name, ".pub") != 0)
             continue;
 
-        // Try to read public key files (ignoring errors)
         uint8_t pk[32];
         int fd = openat(dir_fd, dp->d_name, O_RDONLY);
         if (fd < 0) continue;
 
-        // docs:
-        // If fdopen() returns NULL, use close() to close the file.
-        // If fdopen() is successful, you must use fclose() to close the stream and file.
         FILE* pk_fp = fdopen(fd, "r");
         if (pk_fp == NULL) {
             close(fd);
@@ -451,7 +440,7 @@ int detach(FILE* fp)
 //
 void keyfile_warn(char* fn, int is_priv)
 {
-    if (endswith(fn, is_priv ? ".priv" : ".pub") != 0)
+    if (str_endswith(fn, is_priv ? ".priv" : ".pub") != 0)
         fprintf(stderr, "kurv: warning: %s key file doesn't end in %s\n",
                 is_priv ? "private" : "public",
                 is_priv ? ".priv" : ".pub");
@@ -474,10 +463,10 @@ FILE* fopen_or_die(const char* ctx, const char* fn)
 
 int main(int argc, char** argv)
 {
-    char* pk_fn  = "";   // neeed for should_show_id
     FILE* fp     = stdin;
     FILE* pk_fp  = NULL;
     FILE* sk_fp  = NULL;
+    char* pk_fn  = "";
     char* base   = NULL;
     char  action = 0;
     int should_show_id = 0;
@@ -505,7 +494,6 @@ int main(int argc, char** argv)
     } else if (action == 'g') {
         rv = generate(base);
     } else {
-        // Read one argument
         if (optind < argc) {
             if (optind + 1 != argc) die("invalid usage. see kurv -h.");
             char* fn = argv[optind];
@@ -530,7 +518,6 @@ int main(int argc, char** argv)
                 break;
         }
     }
-    // If all goes well we close everything and exit.
     if (fp != NULL)    fclose(fp);
     if (pk_fp != NULL) fclose(pk_fp);
     if (sk_fp != NULL) fclose(sk_fp);
