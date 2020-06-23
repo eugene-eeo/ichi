@@ -82,12 +82,14 @@ uint8_t* read_file(FILE* fp, size_t* bufsize)
     if (buf == NULL)
         return NULL;
 
+    size_t r = 0;
     size_t n;
     while (!feof(fp) && ((n = fread(buf + total, sizeof(uint8_t), READ_SIZE, fp)) > 0)) {
         total += n;
         if (size <= total) {
+            r++;
             // realloc
-            size += 2 * READ_SIZE;
+            size += r * READ_SIZE;
             uint8_t* new = reallocarray(buf, size, sizeof(uint8_t));
             if (new == NULL) {
                 free(buf);
