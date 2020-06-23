@@ -49,19 +49,20 @@ const uint8_t USAGE[] =
     "   kurv -s|-c|-d [-P <privkey>] [-p <pubkey>] [<file>]\n"
     "\n"
     "arguments:\n"
-    "   <file>     Defaults to stdin if not given.\n\n"
+    "   <file>    Defaults to stdin if not given.\n\n"
     "options:\n"
-    "   -h         Show help page.\n"
-    "   -g         Generate keypair <name>.pub and <name>.priv.\n"
-    "   -P <key>   Specify private key file.\n"
-    "   -p <key>   Specify public key file.\n"
-    "   -s         Sign <file> using the given private key.\n"
-    "   -c         Check <file> using the key given (if any).\n"
-    "              If no key file is specified, try *.pub files in\n"
-    "              $KURV_KEYRING until a valid key is found.\n"
-    "   -i         Print the key used upon successful check.\n"
-    "   -o         Print file contents upon successful check.\n"
-    "   -d         Detach signature from the signed file.\n"
+    "   -h        Show help page.\n"
+    "   -g        Generate keypair <name>.pub and <name>.priv.\n"
+    "   -P <key>  Specify private key file.\n"
+    "   -p <key>  Specify public key file.\n"
+    "   -s        Sign <file> using private key.\n"
+    "   -c        Check <file> using optional public key.\n"
+    "             If no public key is specified, search for a\n"
+    "             valid public key (file ending in .pub) in \n"
+    "             $KURV_KEYRING."
+    "   -i        Print the key used upon successful check.\n"
+    "   -o        Print file contents upon successful check.\n"
+    "   -d        Detach signature from the signed file.\n"
     ;
 #define SIG_START_LEN (sizeof(SIG_START)-1)
 #define SIG_END_LEN   (sizeof(SIG_END)-1)
@@ -214,7 +215,13 @@ FILE* safe_fopen_w(char* fn, int o_mode)
         err("open");
         return NULL;
     }
-    return fdopen(fd, "w");
+    FILE* fp = fdopen(fd, "w");
+    if (fp == NULL) {
+        close(fd);
+        err("fdopen");
+        return NULL;
+    }
+    return fp;
 }
 
 //
@@ -317,9 +324,8 @@ int sign(FILE* fp, FILE* sk_fp)
 int check_keyring(FILE* fp, int should_show_id, int should_show_og)
 {
     // Check if KURV_KEYRING is set.
-    char*  keyring_dir     = getenv("KURV_KEYRING");
-    size_t keyring_dir_len = keyring_dir == NULL ? 0 : strlen(keyring_dir);
-    if (keyring_dir == NULL || keyring_dir_len == 0)
+    char* keyring_dir = getenv("KURV_KEYRING");
+    if (keyring_dir == NULL)
         die("$KURV_KEYRING is not set.");
 
     // Read message first.
@@ -335,8 +341,13 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
     // Find a matching key
     DIR* dir = opendir(keyring_dir);
     struct dirent *dp;
-    if (dir == NULL)
-        errdie("opendir");
+    if (dir == NULL) {
+        err("opendir");
+        die("cannot open keyring directory '%s'", keyring_dir);
+    }
+    int dir_fd = dirfd(dir);
+    if (dir_fd < 0)
+        errdie("dirfd");
 
     while ((dp = readdir(dir)) != NULL) {
         // Check that file ends with .pub
@@ -347,11 +358,17 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
 
         // Try to read public key files (ignoring errors)
         uint8_t pk[32];
-        int fd = openat(dirfd(dir), dp->d_name, O_RDONLY);
+        int fd = openat(dir_fd, dp->d_name, O_RDONLY);
         if (fd < 0) continue;
 
+        // docs:
+        // If fdopen() returns NULL, use close() to close the file.
+        // If fdopen() is successful, you must use fclose() to close the stream and file.
         FILE* pk_fp = fdopen(fd, "r");
-        if (pk_fp == NULL) continue;
+        if (pk_fp == NULL) {
+            close(fd);
+            continue;
+        }
         if (find_key_in_file(pk, pk_fp) != 0 || crypto_check(sig, pk, msg, msg_size) != 0) {
             fclose(pk_fp);
             continue;
@@ -361,7 +378,7 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
         if (should_show_id)
             printf("%s%s%s\n",
                    keyring_dir,
-                   keyring_dir[keyring_dir_len-1] == '/' ? "" : "/",
+                   keyring_dir[strlen(keyring_dir)-1] == '/' ? "" : "/",
                    dp->d_name);
         if (should_show_og) fwrite(msg, sizeof(uint8_t), msg_size, stdout);
         exit(0);

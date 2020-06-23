@@ -9,15 +9,12 @@
   Example workflow:
 
     1. generate a keypair:
-       this generates two files, <base>.pub and <base>.priv,
-       you can publish <base>.pub, but <base>.priv has to
-       be secret.
 
        $ kurv -g id
        $ ls
        file.txt id.pub id.priv
 
-    2. sign a file:
+    2. signing a file:
 
        $ kurv -sP id.priv file.txt > file-signed.txt
 
