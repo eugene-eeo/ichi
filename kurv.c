@@ -381,7 +381,10 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
                    keyring_dir[strlen(keyring_dir)-1] == '/' ? "" : "/",
                    dp->d_name);
         if (should_show_og) fwrite(msg, sizeof(uint8_t), msg_size, stdout);
-        exit(0);
+        fclose(pk_fp);
+        closedir(dir);
+        free(msg);
+        return 0;
     }
 
     die("cannot find a signer.");
