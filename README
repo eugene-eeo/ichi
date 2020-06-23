@@ -1,12 +1,7 @@
 
-            <-.(`-')             (`-')      (`-')
-             __( OO)     .->  <-.(OO )     _(OO )
-            '-'. ,--,--.(,--. ,------,,--.(_/,-.\
-            |  .'   |  | |(`-'|   /`. \   \ / (_/
-            |      /|  | |(OO |  |_.' |\   /   /
-            |  .   '|  | | |  |  .   ._ \     /_)
-            |  |\   \  '-'(_ .|  |\  \\-'\   /
-            `--' '--'`-----'  `--' '--'   `-'
+
+  █▄▀ █░█ █▀█ █░█
+  █░█ █▄█ █▀▄ ▀▄▀
 
   $ kurv_
 
@@ -32,4 +27,10 @@
 
        $ kurv -c file-signed.txt -p id.pub
        $ KURV_KEYRING='...' kurv -c file-signed.txt
+
+
+    4. detach signature:
+       remove a signature from a file:
+
+       $ kurv -d file-signed.txt
 

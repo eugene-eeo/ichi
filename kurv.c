@@ -185,7 +185,7 @@ void concat(char* dst, const char* a, size_t a_size,
 {
     memcpy(dst,          a, a_size);
     memcpy(dst + a_size, b, b_size);
-    dst[a_size + b_size] = '\0';
+    dst[a_size + b_size] = 0;
 }
 
 //
