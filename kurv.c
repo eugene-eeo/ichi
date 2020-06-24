@@ -239,7 +239,7 @@ int generate(char* base)
     fp = safe_fopen_w(path, S_IWUSR | S_IRUSR | S_IRGRP);
     if (fp == NULL
             || fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk)
-            || fwrite("\n", 1, 1, fp) < 0
+            || fwrite("\n", 1, 1, fp) != 1
             || fclose(fp) != 0)
         die("cannot write private key");
     crypto_wipe(b64_sk, sizeof(b64_sk));
@@ -250,7 +250,7 @@ int generate(char* base)
     fp = safe_fopen_w(path, S_IWUSR | S_IRUSR | S_IRGRP | S_IROTH);
     if (fp == NULL
             || fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk)
-            || fwrite("\n", 1, 1, fp) < 0
+            || fwrite("\n", 1, 1, fp) != 1
             || fclose(fp) != 0)
         die("cannot write public key");
     crypto_wipe(b64_pk, sizeof(b64_pk));
@@ -315,25 +315,21 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
         die("error reading file");
 
     uint8_t sig [64];
-    if (find_signature(sig, msg, &msg_size) < 0)
-        die("cannot find / malformed signature");
+    if (find_signature(sig, msg, &msg_size) != 0)
+        die("malformed signature");
 
+    int dir_fd;
     DIR* dir = opendir(keyring_dir);
+    if (dir == NULL || (dir_fd = dirfd(dir)) < 0)
+        die("cannot open keyring directory: '%s'", keyring_dir);
+
     struct dirent *dp;
-    if (dir == NULL)
-        die("opendir");
-
-    int dir_fd = dirfd(dir);
-    if (dir_fd < 0)
-        die("opendir");
-
     while ((dp = readdir(dir)) != NULL) {
         if (strcmp(dp->d_name, ".") == 0
                 || strcmp(dp->d_name, "..") == 0
                 || str_endswith(dp->d_name, ".pub") != 0)
             continue;
 
-        uint8_t pk[32];
         int fd = openat(dir_fd, dp->d_name, O_RDONLY);
         if (fd < 0) continue;
 
@@ -342,6 +338,7 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
             close(fd);
             continue;
         }
+        uint8_t pk[32];
         if (find_key_in_file(pk, pk_fp) != 0 || crypto_check(sig, pk, msg, msg_size) != 0) {
             fclose(pk_fp);
             continue;
@@ -382,8 +379,8 @@ int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_sho
     if (msg == NULL)
         die("error reading file");
 
-    if (find_signature(sig, msg, &msg_size) < 0)
-        die("cannot find / malformed signature");
+    if (find_signature(sig, msg, &msg_size) != 0)
+        die("malformed signature");
 
     if (crypto_check(sig,
                      pk,
@@ -407,8 +404,8 @@ int detach(FILE* fp)
         die("error reading file");
 
     uint8_t sig[64]; // unusued
-    if (find_signature(sig, msg, &msg_size) < 0)
-        die("cannot find / malformed signature");
+    if (find_signature(sig, msg, &msg_size) != 0)
+        die("malformed signature");
 
     fwrite(msg, sizeof(uint8_t), msg_size, stdout);
     free(msg);
