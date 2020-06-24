@@ -21,11 +21,23 @@
 #define READ_SIZE (4096)
 #define B64_KEY_SIZE 44  // b64_encoded_size(32)
 #define B64_SIG_SIZE 88  // b64_encoded_size(64)
+#define SEE_USAGE "invalid usage: see kurv -h"
 #define setaction(c) {\
     if (action != 0)\
-        die("invalid usage: see kurv -h");\
+        die(SEE_USAGE);\
     action = (c);\
 }
+#define err(...) {\
+    fwrite("kurv: ", 1, 7, stderr);\
+    fprintf(stderr, __VA_ARGS__);\
+    if (errno) {\
+        fprintf(stderr, ": ");\
+        perror(NULL);\
+    } else {\
+        fprintf(stderr, "\n");\
+    }\
+}
+#define die(...) { err(__VA_ARGS__); exit(1); }
 
 const uint8_t SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
 const uint8_t SIG_END[] =   "\n----END KURV SIGNATURE----\n";
@@ -55,16 +67,15 @@ const uint8_t USAGE[] =
 #define SIG_START_LEN (sizeof(SIG_START)-1)
 #define SIG_END_LEN   (sizeof(SIG_END)-1)
 
-#define die(...) {\
-    fwrite("kurv: ", 1, 7, stderr);\
-    fprintf(stderr, __VA_ARGS__);\
-    if (errno) {\
-        fprintf(stderr, ": ");\
-        perror(NULL);\
-    } else {\
-        fprintf(stderr, "\n");\
-    }\
-    exit(1);\
+
+//
+// Convenience function for fclose chaining
+//
+int _fclose(FILE **fp)
+{
+    int rv = fclose(*fp);
+    *fp = NULL;
+    return rv;
 }
 
 //
@@ -197,8 +208,7 @@ int str_endswith(const char* src, const char* suffix)
 //
 FILE* safe_fopen_w(char* fn, int o_mode)
 {
-    int flags = O_WRONLY | O_CREAT | O_TRUNC;
-    int fd = open(fn, flags, o_mode);
+    int fd = open(fn, O_WRONLY | O_CREAT | O_TRUNC, o_mode);
     if (fd == -1)
         return NULL;
     FILE* fp = fdopen(fd, "w");
@@ -214,12 +224,16 @@ FILE* safe_fopen_w(char* fn, int o_mode)
 //
 int generate(char* base)
 {
+    int rv = 1;
     uint8_t sk[32],
             pk[32],
             b64_sk[B64_KEY_SIZE],
             b64_pk[B64_KEY_SIZE];
-    if (getrandom(sk, 32, 0) < 0)
-        die("cannot generate random key");
+
+    if (getrandom(sk, 32, 0) < 0) {
+        err("cannot generate random key");
+        goto error_1;
+    }
 
     crypto_sign_public_key(pk, sk);
     b64_encode(b64_sk, sk, 32);
@@ -228,22 +242,25 @@ int generate(char* base)
     crypto_wipe(pk, 32);
 
     // Reserve enough space for .priv and .pub
-    FILE* fp;
     size_t len = strlen(base);
     char* path = calloc(len + 5 + 1, sizeof(char));
-    if (path == NULL)
-        die("calloc");
+    if (path == NULL) {
+        err("calloc");
+        goto error_1;
+    }
 
+    FILE* fp;
     // Write private key
     str_concat(path, base, ".priv");
     fp = safe_fopen_w(path, S_IWUSR | S_IRUSR | S_IRGRP);
     if (fp == NULL
             || fwrite(b64_sk, 1, sizeof(b64_sk), fp) != sizeof(b64_sk)
             || fwrite("\n", 1, 1, fp) != 1
-            || fclose(fp) != 0)
-        die("cannot write private key");
-    crypto_wipe(b64_sk, sizeof(b64_sk));
-    fprintf(stderr, "kurv: wrote private key in '%s'\n", path);
+            || _fclose(&fp) != 0) {
+        err("cannot write private key");
+        goto error_2;
+    }
+    err("wrote private key in '%s'", path);
 
     // Write public key
     str_concat(path, base, ".pub");
@@ -251,13 +268,22 @@ int generate(char* base)
     if (fp == NULL
             || fwrite(b64_pk, 1, sizeof(b64_pk), fp) != sizeof(b64_pk)
             || fwrite("\n", 1, 1, fp) != 1
-            || fclose(fp) != 0)
-        die("cannot write public key");
-    crypto_wipe(b64_pk, sizeof(b64_pk));
-    fprintf(stderr, "kurv: wrote public key in '%s'\n", path);
+            || _fclose(&fp) != 0) {
+        err("cannot write private key");
+        goto error_2;
+    }
+    fp = NULL;
+    err("wrote public key in '%s'", path);
+    rv = 0;
 
+error_2:
+    if (fp != NULL)
+        fclose(fp);
     free(path);
-    return 0;
+    crypto_wipe(b64_sk, sizeof(b64_sk));
+    crypto_wipe(b64_pk, sizeof(b64_pk));
+error_1:
+    return rv;
 }
 
 //
@@ -265,22 +291,22 @@ int generate(char* base)
 //
 int sign(FILE* fp, FILE* sk_fp)
 {
-    // Make sure to crypto_wipe!
+    int rv = 1;
     uint8_t sk      [32],
             pk      [32],  // used when computing signature
             sig     [64],
             b64_sig [B64_SIG_SIZE];
 
     if (find_key_in_file(sk, sk_fp) == -1) {
-        crypto_wipe(sk, 32);
-        die("invalid private key");
+        err("invalid private key");
+        goto error_1;
     }
 
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL) {
-        crypto_wipe(sk, 32);
         die("cannot read file");
+        goto error_1;
     }
 
     crypto_sign_public_key(pk, sk);
@@ -288,15 +314,18 @@ int sign(FILE* fp, FILE* sk_fp)
                 sk, pk,
                 msg, msg_size);
     b64_encode(b64_sig, sig, 64);
-    crypto_wipe(sk, 32);
-    crypto_wipe(pk, 32);
 
     fwrite(msg,       sizeof(uint8_t), msg_size,        stdout);
     fwrite(SIG_START, sizeof(uint8_t), SIG_START_LEN,   stdout);
     fwrite(b64_sig,   sizeof(uint8_t), sizeof(b64_sig), stdout);
     fwrite(SIG_END,   sizeof(uint8_t), SIG_END_LEN,     stdout);
     free(msg);
-    return 0;
+    rv = 0;
+
+error_1:
+    crypto_wipe(sk, 32);
+    crypto_wipe(pk, 32);
+    return rv;
 }
 
 //
@@ -306,13 +335,12 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
 {
     char* keyring_dir = getenv("KURV_KEYRING");
     if (keyring_dir == NULL)
-        die("$KURV_KEYRING is not set");
+        die("$KURV_KEYRING not set");
 
-    // Read message first.
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL)
-        die("error reading file");
+        die("cannot read file");
 
     uint8_t sig [64];
     if (find_signature(sig, msg, &msg_size) != 0)
@@ -324,37 +352,35 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
         die("cannot open keyring directory: '%s'", keyring_dir);
 
     struct dirent *dp;
+    int fd = -1;
+    FILE* pk_fp = NULL;
+    uint8_t pk[32];
+
     while ((dp = readdir(dir)) != NULL) {
         if (strcmp(dp->d_name, ".") == 0
                 || strcmp(dp->d_name, "..") == 0
                 || str_endswith(dp->d_name, ".pub") != 0)
             continue;
 
-        int fd = openat(dir_fd, dp->d_name, O_RDONLY);
-        if (fd < 0) continue;
-
-        FILE* pk_fp = fdopen(fd, "r");
-        if (pk_fp == NULL) {
-            close(fd);
-            continue;
-        }
-        uint8_t pk[32];
-        if (find_key_in_file(pk, pk_fp) != 0 || crypto_check(sig, pk, msg, msg_size) != 0) {
-            fclose(pk_fp);
+        if ((fd = openat(dir_fd, dp->d_name, O_RDONLY)) < 0
+                || (pk_fp = fdopen(fd, "r")) == NULL
+                || find_key_in_file(pk, pk_fp) != 0
+                || crypto_check(sig, pk, msg, msg_size) != 0) {
+            // ignore errors
+            if (fd >= 0)       close(fd);
+            if (pk_fp != NULL) fclose(pk_fp);
             continue;
         }
 
         // Found it
+        fclose(pk_fp);
         if (should_show_id)
             printf("%s%s%s\n",
                    keyring_dir,
                    keyring_dir[strlen(keyring_dir)-1] == '/' ? "" : "/",
                    dp->d_name);
         if (should_show_og) fwrite(msg, sizeof(uint8_t), msg_size, stdout);
-        fclose(pk_fp);
-        closedir(dir);
-        free(msg);
-        return 0;
+        exit(0);
     }
 
     die("cannot find a signer");
@@ -366,18 +392,21 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
 //
 int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_show_og)
 {
-    // It's fine to not crypto_wipe in this function, we are
-    // only dealing with public keys.
+    int rv = 1;
     uint8_t pk  [32],
             sig [64];
 
-    if (find_key_in_file(pk, pk_fp) == -1)
-        die("invalid public key");
+    if (find_key_in_file(pk, pk_fp) == -1) {
+        err("invalid public key");
+        goto error_1;
+    }
 
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
-    if (msg == NULL)
-        die("error reading file");
+    if (msg == NULL) {
+        err("cannot read file");
+        goto error_1;
+    }
 
     if (find_signature(sig, msg, &msg_size) != 0)
         die("malformed signature");
@@ -390,7 +419,8 @@ int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_sho
     if (should_show_id) printf("%s\n", pk_fn);
     if (should_show_og) fwrite(msg, sizeof(uint8_t), msg_size, stdout);
     free(msg);
-    return 0;
+error_1:
+    return rv;
 }
 
 //
@@ -401,7 +431,7 @@ int detach(FILE* fp)
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL)
-        die("error reading file");
+        die("cannot read file");
 
     uint8_t sig[64]; // unusued
     if (find_signature(sig, msg, &msg_size) != 0)
@@ -419,7 +449,7 @@ int detach(FILE* fp)
 void keyfile_warn(char* fn, int is_priv)
 {
     if (str_endswith(fn, is_priv ? ".priv" : ".pub") != 0)
-        fprintf(stderr, "kurv: warning: %s key file doesn't end in %s\n",
+        err("warning: %s key file doesn't end in %s\n",
                 is_priv ? "private" : "public",
                 is_priv ? ".priv" : ".pub");
 }
@@ -465,12 +495,12 @@ int main(int argc, char** argv)
 
     int rv = 1;
     if (action == 0) {
-        die("invalid usage. see kurv -h");
+        die(SEE_USAGE);
     } else if (action == 'g') {
         rv = generate(base);
     } else {
         if (optind < argc) {
-            if (optind + 1 != argc) die("invalid usage. see kurv -h");
+            if (optind + 1 != argc) die(SEE_USAGE);
             char* fn = argv[optind];
             switch (action) {
                 case 's': fp = fopen_or_die(fn); break;
@@ -480,7 +510,7 @@ int main(int argc, char** argv)
         }
         switch (action) {
             case 's':
-                if (sk_fp == NULL) die("no private key file specified");
+                if (sk_fp == NULL) die("no private key given");
                 rv = sign(fp, sk_fp);
                 break;
             case 'c':
@@ -496,5 +526,5 @@ int main(int argc, char** argv)
     if (fp != NULL)    fclose(fp);
     if (pk_fp != NULL) fclose(pk_fp);
     if (sk_fp != NULL) fclose(sk_fp);
-    exit(rv);
+    return rv;
 }
