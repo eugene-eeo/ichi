@@ -7,7 +7,7 @@ CFLAGS=-Wall -O3 -I. -march=native
 %.o: %.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-kurv: kurv.o base64.o monocypher/monocypher.o
+kurv: kurv.o base64/base64.o monocypher/monocypher.o
 	$(CC) -o kurv $^
 
 clean:

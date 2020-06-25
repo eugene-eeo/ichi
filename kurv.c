@@ -12,7 +12,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include "base64.h"
+#include "base64/base64.h"
 #include "monocypher/monocypher.h"
 
 //
