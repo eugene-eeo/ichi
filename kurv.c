@@ -28,7 +28,7 @@
     action = (c);\
 }
 #define err(...) {\
-    fwrite("kurv: ", 1, 7, stderr);\
+    fwrite("kurv: ", 1, 6, stderr);\
     fprintf(stderr, __VA_ARGS__);\
     if (errno) {\
         fprintf(stderr, ": ");\
@@ -170,13 +170,14 @@ int find_signature(uint8_t signature[64], const uint8_t* buf, size_t* bufsize_pt
 //
 int find_key_in_file(uint8_t key[32], FILE* fp)
 {
+    int rv = -1;
     uint8_t b64_key[B64_KEY_SIZE];
-    if (read_exactly(b64_key, B64_KEY_SIZE, fp) != 0
-            || decode_exactly(key, 32, b64_key, B64_KEY_SIZE) != 0) {
-        crypto_wipe(b64_key, sizeof(b64_key));
-        return -1;
+    if (read_exactly(b64_key, B64_KEY_SIZE, fp) == 0
+            && decode_exactly(key, 32, b64_key, B64_KEY_SIZE) == 0) {
+        rv = 0;
     }
-    return 0;
+    crypto_wipe(b64_key, sizeof(b64_key));
+    return rv;
 }
 
 //
