@@ -392,21 +392,16 @@ int check_keyring(FILE* fp, int should_show_id, int should_show_og)
 //
 int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_show_og)
 {
-    int rv = 1;
     uint8_t pk  [32],
             sig [64];
 
-    if (find_key_in_file(pk, pk_fp) == -1) {
-        err("invalid public key");
-        goto error_1;
-    }
+    if (find_key_in_file(pk, pk_fp) == -1)
+        die("invalid public key");
 
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
-    if (msg == NULL) {
-        err("cannot read file");
-        goto error_1;
-    }
+    if (msg == NULL)
+        die("cannot read file");
 
     if (find_signature(sig, msg, &msg_size) != 0)
         die("malformed signature");
@@ -419,8 +414,7 @@ int check(FILE* fp, FILE* pk_fp, char* pk_fn, int should_show_id, int should_sho
     if (should_show_id) printf("%s\n", pk_fn);
     if (should_show_og) fwrite(msg, sizeof(uint8_t), msg_size, stdout);
     free(msg);
-error_1:
-    return rv;
+    return 0;
 }
 
 //
