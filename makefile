@@ -4,6 +4,10 @@ endif
 CC=gcc
 CFLAGS=-Wall -O3 -march=native
 
+all: kurv luck
+
+full: clean all tests
+
 %.o: %.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
@@ -21,8 +25,6 @@ clean:
 
 tests: kurv
 	bats test.sh
-
-all: clean kurv tests
 
 install: kurv
 	install -d $(DESTDIR)$(PREFIX)/bin/

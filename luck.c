@@ -19,6 +19,23 @@
     else fprintf(stderr, "\n");\
 }
 
+static const char* SEE_HELP = "invalid usage: see luck -h";
+static const char* HELP =
+    "usage: luck -h\n"
+    "       luck -g <base>\n"
+    "       luck -wk <key>\n"
+    "       luck -ek <key> [file]\n"
+    "       luck -dk <key> [file]\n"
+    "\nargs:\n"
+    "  file       file for encryption/decryption (default: stdin).\n"
+    "\noptions:\n"
+    "  -h         show help\n"
+    "  -g <base>  generate keypair at <key>.sk (secret) and <key>.pk (public)\n"
+    "  -wk <key>  print public key of secret key <key>\n"
+    "  -ek <key>  encrypt file for receipient with pubkey <key>\n"
+    "  -dk <key>  decrypt file with secret key <key>\n"
+    ;
+
 static const uint8_t zeros[24] = { 0 };
 
 
@@ -43,12 +60,10 @@ void xchacha20_init(xchacha20_ctx *ctx, uint8_t* shared_key)
     ctx->ctr = 0;
 }
 
-
 size_t xchacha20_update_size(size_t bufsize)
 {
     return bufsize + 64;
 }
-
 
 size_t xchacha20_update(xchacha20_ctx *ctx,
                         uint8_t* out,
@@ -243,7 +258,7 @@ int write_pubkey(FILE* fp)
             b64_pk [B64_KEY_SIZE];
 
     if (key_from_file(sk, fp) != 0) {
-        err("invalid private key");
+        err("invalid secret key");
         goto error;
     }
 
@@ -444,9 +459,6 @@ error_1:
 
 int main(int argc, char** argv)
 {
-    // luck -g <base>
-    // luck -w    -k <key>
-    // luck -e|-d -k <key> [<file>]
     int rv = 1;
     FILE* fp     = NULL;
     FILE* key_fp = NULL;
@@ -457,9 +469,12 @@ int main(int argc, char** argv)
     int expect_fp   = 0;  // expect fp
     int expect_key  = 0;  // expect key
 
-    while ((c = getopt(argc, argv, "g:wedk:")) != -1)
+    while ((c = getopt(argc, argv, "hg:wedk:")) != -1)
         switch (c) {
-        default:  goto out;
+        default: err("%s", SEE_HELP); goto out;
+        case 'h':
+            printf("%s", HELP);
+            goto out;
         case 'g': action = 'g'; no_argc = 1;   base = optarg;  break;
         case 'w': action = 'w'; no_argc = 1;   expect_key = 1; break;
         case 'e': action = 'e'; expect_fp = 1; expect_key = 1; break;
@@ -491,14 +506,14 @@ int main(int argc, char** argv)
         } else if (argc == optind) {
             fp = stdin;
         } else {
-            err("invalid usage");
+            err("%s", SEE_HELP);
             goto out;
         }
     }
 
     switch (action) {
     case 0:
-        err("invalid usage");
+        err("%s", SEE_HELP);
         break;
     case 'g': rv = generate_keypair(base); break;
     case 'w': rv = write_pubkey(key_fp);   break;
