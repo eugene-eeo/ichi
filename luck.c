@@ -8,6 +8,7 @@
 #include "monocypher/monocypher.h"
 #include "base64/base64.h"
 
+#define LINE_WRAP 64
 #define B64_KEY_SIZE 44
 #define err(...) {\
     fprintf(stderr, "luck: ");\
@@ -258,8 +259,9 @@ int write_pubkey(FILE* fp)
     rv = 0;
 
 error:
-    crypto_wipe(pk, 32);
-    crypto_wipe(sk, 32);
+    crypto_wipe(b64_pk, sizeof(b64_pk));
+    crypto_wipe(pk,     sizeof(pk));
+    crypto_wipe(sk,     sizeof(sk));
     return rv;
 }
 
@@ -305,7 +307,6 @@ int encrypt(FILE* fp, FILE* key_fp)
         goto error_2;
     }
 
-    size_t m;
     size_t l = 0; // ctx for wraplines
 
     xchacha20_ctx xctx;
@@ -315,27 +316,27 @@ int encrypt(FILE* fp, FILE* key_fp)
     b64_encode_init(&ctx);
 
     for (;;) {
-        size_t n = fread(raw_buf, 1, 1024, fp);
+        size_t n = fread(raw_buf, 1, raw_buf_size, fp);
         if (ferror(fp)) {
             err("error reading file");
             goto error_2;
         }
         n = xchacha20_update(&xctx, enc_buf, raw_buf, n);
-        m = b64_encode_update(&ctx, b64_buf, enc_buf, n);
-        if (wraplines(&l, 64, b64_buf, m, 0, stdout) != 0) {
+        size_t m = b64_encode_update(&ctx, b64_buf, enc_buf, n);
+        if (wraplines(&l, LINE_WRAP, b64_buf, m, 0, stdout) != 0) {
             err("cannot write");
             goto error_2;
         }
         if (feof(fp)) {
             n = xchacha20_final(&xctx, enc_buf);
             m = b64_encode_update(&ctx, b64_buf, enc_buf, n);
-            if (wraplines(&l, 64, b64_buf, m, 0, stdout) != 0) {
+            if (wraplines(&l, LINE_WRAP, b64_buf, m, 0, stdout) != 0) {
                 err("cannot write");
                 goto error_2;
             }
 
             m = b64_encode_final(&ctx, b64_buf);
-            if (wraplines(&l, 64, b64_buf, m, 1, stdout) != 0) {
+            if (wraplines(&l, LINE_WRAP, b64_buf, m, 1, stdout) != 0) {
                 err("cannot write");
                 goto error_2;
             }
@@ -393,25 +394,27 @@ int decrypt(FILE* fp, FILE* key_fp)
     b64_decode_ctx ctx;  b64_decode_init(&ctx);
 
     for (;;) {
-        size_t n = fread(b64_buf, 1, 1024, fp);
+        size_t n = fread(b64_buf, 1, b64_buf_size, fp);
         if (ferror(fp)) {
             err("cannot read");
             goto error_2;
         }
-        size_t r = 0;
-        for (size_t i = 0; i <= n; i++) {
-            if (i == n || b64_buf[i] == '\n') {
-                size_t m = b64_decode_update(&ctx, raw_buf, b64_buf + i - r, r);
-                size_t x = xchacha20_update(&xctx, enc_buf, raw_buf, m);
-                r = 0;
-                if (fwrite(enc_buf, 1, x, stdout) < x) {
-                    err("cannot write");
-                    goto error_2;
-                }
-            } else {
-                r++;
+
+        uint8_t* start = b64_buf;
+        while (start < b64_buf + n) {
+            uint8_t* end = memchr(start, '\n', n - (start - b64_buf));
+            if (end == NULL) {
+                end = b64_buf + n;
             }
+            size_t m = b64_decode_update(&ctx, raw_buf, start, end - start);
+            size_t x = xchacha20_update(&xctx, enc_buf, raw_buf, m);
+            if (fwrite(enc_buf, 1, x, stdout) < x) {
+                err("cannot write");
+                goto error_2;
+            }
+            start = end + 1;
         }
+
         if (feof(fp)) {
             size_t m = b64_decode_final(&ctx, raw_buf);
             size_t x = xchacha20_update(&xctx, enc_buf, raw_buf, m);
