@@ -97,11 +97,8 @@ size_t b64_encode_update(b64_encode_ctx *ctx,
     // if we have any outstanding data from before
     if (ctx->bufsize > 0) {
         // load into ctx->buf first
-        while ((ctx->bufsize < 3) && (i < bufsize)) {
+        for (; (ctx->bufsize < 3) && (i < bufsize); i++, ctx->bufsize++)
             ctx->buf[ctx->bufsize] = buf[i];
-            ctx->bufsize++;
-            i++;
-        }
         if (ctx->bufsize < 3)
             return j;
         // consume to produce 4 characters in out
@@ -200,11 +197,8 @@ size_t b64_decode_update(b64_decode_ctx *ctx,
     // if we have any outstanding data from before
     if (ctx->bufsize > 0) {
         // load into ctx->buf first
-        while (ctx->bufsize < 4 && i < bufsize) {
+        for (; ctx->bufsize < 4 && i < bufsize; i++, ctx->bufsize++)
             ctx->buf[ctx->bufsize] = buf[i];
-            ctx->bufsize++;
-            i++;
-        }
         if (ctx->bufsize < 4)
             return j;
         // consume

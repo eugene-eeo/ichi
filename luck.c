@@ -24,16 +24,15 @@ static const char* HELP =
     "usage: luck -h\n"
     "       luck -g <base>\n"
     "       luck -wk <key>\n"
-    "       luck -ek <key> [file]\n"
-    "       luck -dk <key> [file]\n"
+    "       luck (-ek <key> | -dk <key>) [FILE]\n"
     "\nargs:\n"
-    "  file       file for encryption/decryption (default: stdin).\n"
+    "  FILE       file for encryption/decryption (default: stdin).\n"
     "\noptions:\n"
     "  -h         show help\n"
-    "  -g <base>  generate keypair at <key>.sk (secret) and <key>.pk (public)\n"
+    "  -g <base>  generate keypair in <key>.sk (secret) and <key>.pk (public)\n"
     "  -wk <key>  print public key of secret key <key>\n"
-    "  -ek <key>  encrypt file for receipient with pubkey <key>\n"
-    "  -dk <key>  decrypt file with secret key <key>\n"
+    "  -ek <key>  encrypt FILE for receipient with pubkey <key>\n"
+    "  -dk <key>  decrypt FILE with secret key <key>\n"
     ;
 
 static const uint8_t zeros[24] = { 0 };
@@ -71,15 +70,12 @@ size_t xchacha20_update(xchacha20_ctx *ctx,
 {
     size_t i = 0;
     size_t n = 0;
-    // load into buffer
     if (ctx->bufsize > 0) {
-        while (ctx->bufsize < 64 && i < bufsize) {
+        // load into buffer
+        for (; ctx->bufsize < 64 && i < bufsize; i++, ctx->bufsize++)
             ctx->buf[ctx->bufsize] = buf[i];
-            ctx->bufsize++;
-            i++;
-        }
         if (ctx->bufsize < 64)
-            return 0;
+            return n;
         // consume
         ctx->bufsize = 0;
         ctx->ctr = crypto_xchacha20_ctr(out + n,
@@ -93,10 +89,8 @@ size_t xchacha20_update(xchacha20_ctx *ctx,
                                         ctx->key, zeros, ctx->ctr);
     // everything not fitting into 64 bytes
     // goes into buffer
-    for (; i < bufsize; i++) {
+    for (; i < bufsize; i++, ctx->bufsize++)
         ctx->buf[ctx->bufsize] = buf[i];
-        ctx->bufsize++;
-    }
     return n;
 }
 
@@ -107,14 +101,12 @@ size_t xchacha20_final(xchacha20_ctx *ctx, uint8_t *out)
         // consume
         ctx->ctr = crypto_xchacha20_ctr(out,
                                         ctx->buf, ctx->bufsize,
-                                        ctx->key,
-                                        zeros,
-                                        ctx->ctr);
+                                        ctx->key, zeros, ctx->ctr);
         n += ctx->bufsize;
     }
-    crypto_wipe(ctx->key, 32);
     crypto_wipe(ctx->buf, 64);
     ctx->bufsize = 0;
+    crypto_wipe(ctx->key, 32);
     ctx->ctr = 0;
     return n;
 }
@@ -125,15 +117,6 @@ int _fclose(FILE** fp)
     int rv = fclose(*fp);
     *fp = NULL;
     return rv;
-}
-
-void concat_str(char* dst, char* a, char* b)
-{
-    size_t a_size = strlen(a),
-           b_size = strlen(b);
-    memcpy(dst,          a, a_size);
-    memcpy(dst + a_size, b, b_size);
-    dst[a_size + b_size] = 0;
 }
 
 int read_exactly(uint8_t *buf, size_t bufsize, FILE* fp)
@@ -206,8 +189,9 @@ int generate_keypair(char *base)
 
     crypto_key_exchange_public_key(pk, sk);
 
+    size_t len = strlen(base);
     FILE* fp;
-    char* fn = malloc(strlen(base) + 4);
+    char* fn = calloc(1, strlen(base) + 4);
     if (fn == NULL) {
         err("cannot malloc");
         goto error_1;
@@ -215,25 +199,26 @@ int generate_keypair(char *base)
 
     // Secret key
     b64_encode(b64_key, sk, sizeof(sk));
-    concat_str(fn, base, ".sk");
+    memcpy(fn, base, len);
+    memcpy(fn + len,  ".sk", 3);
     fp = fopen(fn, "w");
     if (fp == NULL
             || fwrite(b64_key, 1, sizeof(b64_key), fp) != sizeof(b64_key)
             || fwrite("\n", 1, 1, fp) != 1
             || _fclose(&fp) != 0) {
-        err("cannot write %s", fn);
+        err("cannot write secret key in '%s'", fn);
         goto error_2;
     }
 
     // Public key
     b64_encode(b64_key, pk, sizeof(pk));
-    concat_str(fn, base, ".pk");
+    memcpy(fn + len,  ".pk", 3);
     fp = fopen(fn, "w");
     if (fp == NULL
             || fwrite(b64_key, 1, sizeof(b64_key), fp) != sizeof(b64_key)
             || fwrite("\n", 1, 1, fp) != 1
             || _fclose(&fp) != 0) {
-        err("cannot write %s", fn);
+        err("cannot write public key in '%s'", fn);
         goto error_2;
     }
 
@@ -473,7 +458,8 @@ int main(int argc, char** argv)
         switch (c) {
         default: err("%s", SEE_HELP); goto out;
         case 'h':
-            printf("%s", HELP);
+            printf("%s\n", HELP);
+            rv = 0;
             goto out;
         case 'g': action = 'g'; no_argc = 1;   base = optarg;  break;
         case 'w': action = 'w'; no_argc = 1;   expect_key = 1; break;
@@ -493,7 +479,7 @@ int main(int argc, char** argv)
         goto out;
     }
     if (no_argc && argc - optind > 0) {
-        err("invalid usage");
+        err("%s", SEE_HELP);
         goto out;
     }
     if (expect_fp) {
@@ -512,9 +498,7 @@ int main(int argc, char** argv)
     }
 
     switch (action) {
-    case 0:
-        err("%s", SEE_HELP);
-        break;
+    default:  err("%s", SEE_HELP);         break;
     case 'g': rv = generate_keypair(base); break;
     case 'w': rv = write_pubkey(key_fp);   break;
     case 'e': rv = encrypt(fp, key_fp);    break;
