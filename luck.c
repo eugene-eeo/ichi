@@ -266,7 +266,7 @@ int write_pubkey(FILE* fp)
     b64_encode(b64_pk, pk, sizeof(pk));
 
     if (fwrite(b64_pk, 1, sizeof(b64_pk), stdout) != sizeof(b64_pk)
-     || fwrite("\n",   1,              1, stdout) != 1) {
+            || fwrite("\n", 1, 1, stdout) != 1) {
         err("cannot write");
         goto error;
     }
@@ -315,7 +315,7 @@ int encrypt(FILE* fp, FILE* key_fp)
 
     b64_encode(b64_eph_pk, eph_pk, sizeof(eph_pk));
     if (fwrite(b64_eph_pk, 1, sizeof(b64_eph_pk), stdout) != sizeof(b64_eph_pk)
-     || fwrite("\n",       1,                  1, stdout) != 1) {
+            || fwrite("\n", 1, 1, stdout) != 1) {
         err("cannot write");
         goto error_2;
     }
