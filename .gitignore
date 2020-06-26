@@ -1,5 +1,8 @@
 /kurv
+/luck
 *.o
 /test/
 /id.priv
 /id.pub
+/id.sk
+/id.pk

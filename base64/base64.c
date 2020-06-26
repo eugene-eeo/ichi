@@ -82,7 +82,7 @@ void b64_encode_init(b64_encode_ctx *ctx)
     ctx->bufsize = 0;
 }
 
-size_t b64_encode_size(size_t bufsize)
+size_t b64_encode_update_size(size_t bufsize)
 {
     return b64_encoded_size(bufsize) + 4;
 }

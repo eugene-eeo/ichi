@@ -2,13 +2,16 @@ ifeq ($(PREFIX),)
     PREFIX := /usr/local
 endif
 CC=gcc
-CFLAGS=-Wall -O3 -I. -march=native
+CFLAGS=-Wall -O3 -march=native
 
 %.o: %.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 kurv: kurv.o base64/base64.o monocypher/monocypher.o
 	$(CC) -o kurv $^
+
+luck: luck.o base64/base64.o monocypher/monocypher.o
+	$(CC) -o luck $^
 
 clean:
 	-rm kurv

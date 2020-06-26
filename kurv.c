@@ -306,7 +306,7 @@ int sign(FILE* fp, FILE* sk_fp)
     size_t msg_size;
     uint8_t* msg = read_file(fp, &msg_size);
     if (msg == NULL) {
-        die("cannot read file");
+        err("cannot read file");
         goto error_1;
     }
 
@@ -316,12 +316,18 @@ int sign(FILE* fp, FILE* sk_fp)
                 msg, msg_size);
     b64_encode(b64_sig, sig, 64);
 
-    fwrite(msg,       sizeof(uint8_t), msg_size,        stdout);
-    fwrite(SIG_START, sizeof(uint8_t), SIG_START_LEN,   stdout);
-    fwrite(b64_sig,   sizeof(uint8_t), sizeof(b64_sig), stdout);
-    fwrite(SIG_END,   sizeof(uint8_t), SIG_END_LEN,     stdout);
-    free(msg);
+    if (fwrite(msg,       sizeof(uint8_t), msg_size,        stdout) != msg_size
+     || fwrite(SIG_START, sizeof(uint8_t), SIG_START_LEN,   stdout) != SIG_START_LEN
+     || fwrite(b64_sig,   sizeof(uint8_t), sizeof(b64_sig), stdout) != sizeof(b64_sig)
+     || fwrite(SIG_END,   sizeof(uint8_t), SIG_END_LEN,     stdout) != SIG_END_LEN
+     ) {
+        err("cannot write");
+        goto error_2;
+    }
     rv = 0;
+
+error_2:
+    free(msg);
 
 error_1:
     crypto_wipe(sk, 32);
