@@ -9,7 +9,6 @@
 
 #include "monocypher/monocypher.h"
 
-#define LINE_WRAP 64
 #define err(...) {\
     fprintf(stderr, "luck: ");\
     fprintf(stderr, __VA_ARGS__);\
@@ -36,8 +35,8 @@ static const char* HELP =
     "  -dk <key>  decrypt FILE with secret key <key>\n"
     ;
 
-static const uint8_t HEAD_BLOCK [1] = "b";
-static const uint8_t HEAD_DIGEST[1] = "d";
+static const uint8_t HEAD_BLOCK  = 'b';
+static const uint8_t HEAD_DIGEST = '$';
 
 int generate_keypair(char *base);
 int write_pubkey(FILE *key_fp);
@@ -45,10 +44,10 @@ int encrypt(FILE *fp, FILE *key_fp);
 int decrypt(FILE *fp, FILE *key_fp);
 
 
-static void increment_buf(uint8_t *buf, size_t bufsize)
+static void increment_nonce(uint8_t *buf)
 {
     int carry = 1;
-    for (size_t i = 0; carry && i < bufsize; i++) {
+    for (size_t i = 0; carry && i < 24; i++) {
         carry = buf[i] == 255;
         buf[i]++;
     }
@@ -68,18 +67,16 @@ void ls_lock(      uint8_t *output,  // input_size + 34
     uint8_t length[2];
     _b2i(length, input_size);
 
-    increment_buf(nonce, 24);
+    increment_nonce(nonce);
     crypto_lock(output,
-                output + 16,
-                key,
-                nonce,
+                output + 16 /* mac */,
+                key, nonce,
                 length, 2);
 
-    increment_buf(nonce, 24);
+    increment_nonce(nonce);
     crypto_lock(output + 18,
-                output + 18 + 16,
-                key,
-                nonce,
+                output + 18 + 16 /* mac */,
+                key, nonce,
                 input, input_size);
 }
 
@@ -88,18 +85,16 @@ int ls_unlock_length(size_t        *to_read,
                      const uint8_t  key   [32],
                      const uint8_t  input [18]) // 16 + 2
 {
-    uint8_t length[2];
-    increment_buf(nonce, 24);
-    if (crypto_unlock(length,
-                      key,
-                      nonce,
-                      input,
+    uint8_t length_buf[2];
+    increment_nonce(nonce);
+    if (crypto_unlock(length_buf,
+                      key, nonce,
+                      input /* mac */,
                       input + 16, 2) != 0)
         return -1;
-    // convert back to integer length
-    /* printf("%u %u\n", length[0], length[1]); */
-    *to_read =   (size_t) length[0]
-             + (((size_t) length[1]) << 8);
+    // convert back to integer
+    *to_read =   (size_t) length_buf[0]
+             + (((size_t) length_buf[1]) << 8);
     return 0;
 }
 
@@ -108,11 +103,10 @@ int ls_unlock_payload(uint8_t        *output,
                       const uint8_t  key   [32],
                       const uint8_t  *input, size_t input_size)
 {
-    increment_buf(nonce, 24);
+    increment_nonce(nonce);
     return crypto_unlock(output,
-                         key,
-                         nonce,
-                         input,
+                         key, nonce,
+                         input, /* mac */
                          input + 16, input_size);
 }
 
@@ -267,11 +261,11 @@ int encrypt(FILE* fp, FILE* key_fp)
                 nonce,
                 shared_key,
                 raw_buf, n);
-        __check_write(write_exactly(HEAD_BLOCK, 1, stdout));
+        __check_write(write_exactly(&HEAD_BLOCK, 1, stdout));
         __check_write(write_exactly(enc_buf, n + 34, stdout));
         if (feof(fp)) {
             crypto_blake2b_final(&ctx, digest);
-            __check_write(write_exactly(HEAD_DIGEST, 1, stdout));
+            __check_write(write_exactly(&HEAD_DIGEST, 1, stdout));
             __check_write(write_exactly(digest, 64, stdout));
             break;
         }
@@ -289,8 +283,8 @@ error_1:
     return rv;
 }
 
-#define __check_read(x)   { if ((x) != 0) { err("cannot read");    goto error_2; } }
-#define __check_unlock(x) { if ((x) != 0) { err("bad encryption"); goto error_2; } }
+#define __check_read(x)   { if ((x) != 0) { err("bad encryption: cannot read");   goto error_2; } }
+#define __check_unlock(x) { if ((x) != 0) { err("bad encryption: cannot unlock"); goto error_2; } }
 
 int decrypt(FILE* fp, FILE* key_fp)
 {
@@ -334,7 +328,7 @@ int decrypt(FILE* fp, FILE* key_fp)
             default:
                 err("bad encryption");
                 goto error_2;
-            case 'b':
+            case HEAD_BLOCK:
             {
                 size_t length = 0;
                 __check_read(  read_exactly(raw_buf, 18, fp));
@@ -348,18 +342,20 @@ int decrypt(FILE* fp, FILE* key_fp)
                 crypto_blake2b_update(&ctx, dec_buf, length);
                 break;
             }
-            case 'd':
+            case HEAD_DIGEST:
             {
                 // compare our digest vs real
                 crypto_blake2b_final(&ctx, digest);
                 __check_read(  read_exactly(raw_buf, 64, fp));
                 __check_unlock(crypto_verify64(digest, raw_buf));
-
+                // expect EOF - do one extra read here otherwise we cannot
+                // detect EOF.
                 if (fread(raw_buf, 1, 1, fp) == 1 || !feof(fp)) {
                     err("expected to be EOF");
                     goto error_2;
                 }
                 done = 1;
+                rv = 0;
                 break;
             }
         }
