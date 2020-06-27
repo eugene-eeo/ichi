@@ -1,3 +1,5 @@
+#include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -6,10 +8,8 @@
 #include <sys/random.h>
 
 #include "monocypher/monocypher.h"
-#include "base64/base64.h"
 
 #define LINE_WRAP 64
-#define B64_KEY_SIZE 44
 #define err(...) {\
     fprintf(stderr, "luck: ");\
     fprintf(stderr, __VA_ARGS__);\
@@ -36,8 +36,8 @@ static const char* HELP =
     "  -dk <key>  decrypt FILE with secret key <key>\n"
     ;
 
-static const uint8_t zeros[24] = { 0 };
-
+static const uint8_t HEAD_BLOCK [1] = "b";
+static const uint8_t HEAD_DIGEST[1] = "d";
 
 int generate_keypair(char *base);
 int write_pubkey(FILE *key_fp);
@@ -45,73 +45,76 @@ int encrypt(FILE *fp, FILE *key_fp);
 int decrypt(FILE *fp, FILE *key_fp);
 
 
-typedef struct {
-    uint8_t  buf[64];
-    uint8_t  bufsize;
-    uint8_t  key[32];
-    uint64_t ctr;
-} xchacha20_ctx;
-
-
-void xchacha20_init(xchacha20_ctx *ctx, uint8_t* shared_key)
+static void increment_buf(uint8_t *buf, size_t bufsize)
 {
-    memcpy(ctx->key, shared_key, 32);
-    ctx->bufsize = 0;
-    ctx->ctr = 0;
-}
-
-size_t xchacha20_update_size(size_t bufsize)
-{
-    return bufsize + 64;
-}
-
-size_t xchacha20_update(xchacha20_ctx *ctx,
-                        uint8_t* out,
-                        const uint8_t* buf, size_t bufsize)
-{
-    size_t i = 0;
-    size_t n = 0;
-    if (ctx->bufsize > 0) {
-        // load into buffer
-        for (; ctx->bufsize < 64 && i < bufsize; i++, ctx->bufsize++)
-            ctx->buf[ctx->bufsize] = buf[i];
-        if (ctx->bufsize < 64)
-            return n;
-        // consume
-        ctx->bufsize = 0;
-        ctx->ctr = crypto_xchacha20_ctr(out + n,
-                                        ctx->buf, 64,
-                                        ctx->key, zeros, ctx->ctr);
-        n += 64;
+    int carry = 1;
+    for (size_t i = 0; carry && i < bufsize; i++) {
+        carry = buf[i] == 255;
+        buf[i]++;
     }
-    for (; i + 64 < bufsize; i += 64, n += 64)
-        ctx->ctr = crypto_xchacha20_ctr(out + n,
-                                        buf + i, 64,
-                                        ctx->key, zeros, ctx->ctr);
-    // everything not fitting into 64 bytes
-    // goes into buffer
-    for (; i < bufsize; i++, ctx->bufsize++)
-        ctx->buf[ctx->bufsize] = buf[i];
-    return n;
 }
 
-size_t xchacha20_final(xchacha20_ctx *ctx, uint8_t *out)
+static void _b2i(uint8_t *buf, size_t n)
 {
-    size_t n = 0;
-    if (ctx->bufsize > 0) {
-        // consume
-        ctx->ctr = crypto_xchacha20_ctr(out,
-                                        ctx->buf, ctx->bufsize,
-                                        ctx->key, zeros, ctx->ctr);
-        n += ctx->bufsize;
-    }
-    crypto_wipe(ctx->buf, 64);
-    ctx->bufsize = 0;
-    crypto_wipe(ctx->key, 32);
-    ctx->ctr = 0;
-    return n;
+    buf[0] = (n)      & 0xFF;
+    buf[1] = (n >> 8) & 0xFF;
 }
 
+void ls_lock(      uint8_t *output,  // input_size + 34
+                   uint8_t  nonce [24],
+             const uint8_t  key   [32],
+             const uint8_t *input, size_t input_size)
+{
+    uint8_t length[2];
+    _b2i(length, input_size);
+
+    increment_buf(nonce, 24);
+    crypto_lock(output,
+                output + 16,
+                key,
+                nonce,
+                length, 2);
+
+    increment_buf(nonce, 24);
+    crypto_lock(output + 18,
+                output + 18 + 16,
+                key,
+                nonce,
+                input, input_size);
+}
+
+int ls_unlock_length(size_t        *to_read,
+                     uint8_t        nonce [24],
+                     const uint8_t  key   [32],
+                     const uint8_t  input [18]) // 16 + 2
+{
+    uint8_t length[2];
+    increment_buf(nonce, 24);
+    if (crypto_unlock(length,
+                      key,
+                      nonce,
+                      input,
+                      input + 16, 2) != 0)
+        return -1;
+    // convert back to integer length
+    /* printf("%u %u\n", length[0], length[1]); */
+    *to_read =   (size_t) length[0]
+             + (((size_t) length[1]) << 8);
+    return 0;
+}
+
+int ls_unlock_payload(uint8_t        *output,
+                      uint8_t        nonce [24],
+                      const uint8_t  key   [32],
+                      const uint8_t  *input, size_t input_size)
+{
+    increment_buf(nonce, 24);
+    return crypto_unlock(output,
+                         key,
+                         nonce,
+                         input,
+                         input + 16, input_size);
+}
 
 int _fclose(FILE** fp)
 {
@@ -120,69 +123,22 @@ int _fclose(FILE** fp)
     return rv;
 }
 
+int write_exactly(const uint8_t *buf, size_t bufsize, FILE* fp)
+{
+    return (fwrite(buf, 1, bufsize, fp) == bufsize) ? 0 : -1;
+}
+
 int read_exactly(uint8_t *buf, size_t bufsize, FILE* fp)
 {
-    if (fread(buf, 1, bufsize, fp) == bufsize)
-        return 0;
-    return -1;
-}
-
-int decode_exactly(      uint8_t* out, size_t outsize,
-                   const uint8_t *buf, size_t bufsize)
-{
-    if (b64_validate(buf, bufsize) != 0 || b64_decoded_size(buf, bufsize) != outsize)
-        return -1;
-    b64_decode(out, buf, bufsize);
-    return 0;
-}
-
-int key_from_file(uint8_t key[32], FILE* fp)
-{
-    int rv = -1;
-    uint8_t b64_key[B64_KEY_SIZE];
-    if (read_exactly(b64_key, sizeof(b64_key), fp) == 0
-            && decode_exactly(key, 32, b64_key, sizeof(b64_key)) == 0) {
-        rv = 0;
-    }
-    crypto_wipe(b64_key, sizeof(b64_key));
-    return rv;
-}
-
-int wraplines(size_t *line_length,
-              size_t max_length,
-              const uint8_t* buf, size_t bufsize,
-              int final,
-              FILE* fp)
-{
-    size_t offset = 0;
-    while (bufsize > 0) {
-        size_t remainder = max_length - *line_length,
-               to_write  = remainder <= bufsize ? remainder : bufsize;
-
-        if (fwrite(buf + offset, 1, to_write, fp) != to_write)
-            return -1;
-
-        *line_length = *line_length + to_write;
-        if (*line_length == max_length) {
-            *line_length = 0;
-            if (fwrite("\n", 1, 1, fp) != 1)
-                return -1;
-        }
-        offset += to_write;
-        bufsize -= to_write;
-    }
-    if (final && *line_length != 0)
-        if (fwrite("\n", 1, 1, fp) != 1)
-            return -1;
-    return 0;
+    return (fread(buf, 1, bufsize, fp) == bufsize) ? 0 : -1;
 }
 
 int generate_keypair(char *base)
 {
     int rv = 1;
-    uint8_t sk      [32],
-            pk      [32],
-            b64_key [B64_KEY_SIZE];
+    uint8_t sk[32],
+            pk[32];
+
     if (getrandom(sk, sizeof(sk), 0) < 0) {
         err("cannot generate keypair");
         goto error_1;
@@ -199,12 +155,11 @@ int generate_keypair(char *base)
     }
 
     // Secret key
-    b64_encode(b64_key, sk, sizeof(sk));
     memcpy(fn, base, len);
     memcpy(fn + len,  ".sk", 3);
     fp = fopen(fn, "w");
     if (fp == NULL
-            || fwrite(b64_key, 1, sizeof(b64_key), fp) != sizeof(b64_key)
+            || fwrite(sk, 1, sizeof(sk), fp) != sizeof(sk)
             || fwrite("\n", 1, 1, fp) != 1
             || _fclose(&fp) != 0) {
         err("cannot write secret key in '%s'", fn);
@@ -212,11 +167,10 @@ int generate_keypair(char *base)
     }
 
     // Public key
-    b64_encode(b64_key, pk, sizeof(pk));
     memcpy(fn + len,  ".pk", 3);
     fp = fopen(fn, "w");
     if (fp == NULL
-            || fwrite(b64_key, 1, sizeof(b64_key), fp) != sizeof(b64_key)
+            || fwrite(pk, 1, sizeof(pk), fp) != sizeof(pk)
             || fwrite("\n", 1, 1, fp) != 1
             || _fclose(&fp) != 0) {
         err("cannot write public key in '%s'", fn);
@@ -232,26 +186,23 @@ error_2:
 error_1:
     crypto_wipe(sk, sizeof(sk));
     crypto_wipe(pk, sizeof(pk));
-    crypto_wipe(b64_key, sizeof(b64_key));
     return rv;
 }
 
 int write_pubkey(FILE* fp)
 {
     int rv = 1;
-    uint8_t sk     [32],
-            pk     [32],
-            b64_pk [B64_KEY_SIZE];
+    uint8_t sk[32],
+            pk[32];
 
-    if (key_from_file(sk, fp) != 0) {
+    if (read_exactly(sk, 32, fp) != 0) {
         err("invalid secret key");
         goto error;
     }
 
     crypto_key_exchange_public_key(pk, sk);
-    b64_encode(b64_pk, pk, sizeof(pk));
 
-    if (fwrite(b64_pk, 1, sizeof(b64_pk), stdout) != sizeof(b64_pk)
+    if (fwrite(pk, 1, sizeof(pk), stdout) != sizeof(pk)
             || fwrite("\n", 1, 1, stdout) != 1) {
         err("cannot write");
         goto error;
@@ -259,11 +210,12 @@ int write_pubkey(FILE* fp)
     rv = 0;
 
 error:
-    crypto_wipe(b64_pk, sizeof(b64_pk));
-    crypto_wipe(pk,     sizeof(pk));
-    crypto_wipe(sk,     sizeof(sk));
+    crypto_wipe(pk, sizeof(pk));
+    crypto_wipe(sk, sizeof(sk));
     return rv;
 }
+
+#define __check_write(x) { if ((x) != 0) { err("cannot write"); goto error_2; } }
 
 // Encrypt data for key_fp
 int encrypt(FILE* fp, FILE* key_fp)
@@ -272,10 +224,9 @@ int encrypt(FILE* fp, FILE* key_fp)
     uint8_t eph_sk     [32],
             eph_pk     [32],
             pk         [32],
-            shared_key [32],
-            b64_eph_pk [B64_KEY_SIZE];
+            shared_key [32];
 
-    if (key_from_file(pk, key_fp) != 0) {
+    if (read_exactly(pk, 32, key_fp) != 0) {
         err("invalid public key");
         goto error_1;
     }
@@ -285,80 +236,61 @@ int encrypt(FILE* fp, FILE* key_fp)
         goto error_1;
     }
 
-    size_t raw_buf_size = 1024,
-           enc_buf_size = xchacha20_update_size(raw_buf_size),
-           b64_buf_size = b64_encode_update_size(enc_buf_size);
+    crypto_key_exchange_public_key(eph_pk, eph_sk);
+    crypto_key_exchange(shared_key, eph_sk, pk);
+
+    size_t raw_buf_size = 4096,
+           enc_buf_size = 4096 + 34;
 
     uint8_t *raw_buf = malloc(raw_buf_size),
-            *enc_buf = malloc(enc_buf_size),
-            *b64_buf = malloc(b64_buf_size);
-    if (raw_buf == NULL || enc_buf == NULL || b64_buf == NULL) {
+            *enc_buf = malloc(enc_buf_size);
+    if (raw_buf == NULL || enc_buf == NULL) {
         err("cannot malloc");
         goto error_2;
     }
 
-    crypto_key_exchange_public_key(eph_pk, eph_sk);
-    crypto_key_exchange(shared_key, eph_sk, pk);
+    uint8_t nonce[24] = { 0 };
+    __check_write(write_exactly(eph_pk, sizeof(eph_pk), stdout));
 
-    b64_encode(b64_eph_pk, eph_pk, sizeof(eph_pk));
-    if (fwrite(b64_eph_pk, 1, sizeof(b64_eph_pk), stdout) != sizeof(b64_eph_pk)
-            || fwrite("\n", 1, 1, stdout) != 1) {
-        err("cannot write");
-        goto error_2;
-    }
-
-    size_t l = 0; // ctx for wraplines
-
-    xchacha20_ctx xctx;
-    xchacha20_init(&xctx, shared_key);
-
-    b64_encode_ctx ctx;
-    b64_encode_init(&ctx);
+    uint8_t digest[64];
+    crypto_blake2b_ctx ctx;
+    crypto_blake2b_general_init(&ctx, 64, shared_key, 32);
 
     for (;;) {
         size_t n = fread(raw_buf, 1, raw_buf_size, fp);
         if (ferror(fp)) {
-            err("error reading file");
+            err("cannot read");
             goto error_2;
         }
-        n = xchacha20_update(&xctx, enc_buf, raw_buf, n);
-        size_t m = b64_encode_update(&ctx, b64_buf, enc_buf, n);
-        if (wraplines(&l, LINE_WRAP, b64_buf, m, 0, stdout) != 0) {
-            err("cannot write");
-            goto error_2;
-        }
+        crypto_blake2b_update(&ctx, raw_buf, n);
+        ls_lock(enc_buf,
+                nonce,
+                shared_key,
+                raw_buf, n);
+        __check_write(write_exactly(HEAD_BLOCK, 1, stdout));
+        __check_write(write_exactly(enc_buf, n + 34, stdout));
         if (feof(fp)) {
-            n = xchacha20_final(&xctx, enc_buf);
-            m = b64_encode_update(&ctx, b64_buf, enc_buf, n);
-            if (wraplines(&l, LINE_WRAP, b64_buf, m, 0, stdout) != 0) {
-                err("cannot write");
-                goto error_2;
-            }
-
-            m = b64_encode_final(&ctx, b64_buf);
-            if (wraplines(&l, LINE_WRAP, b64_buf, m, 1, stdout) != 0) {
-                err("cannot write");
-                goto error_2;
-            }
+            crypto_blake2b_final(&ctx, digest);
+            __check_write(write_exactly(HEAD_DIGEST, 1, stdout));
+            __check_write(write_exactly(digest, 64, stdout));
             break;
         }
     }
     rv = 0;
 
 error_2:
-    crypto_wipe(ctx.buf, 3);
-    crypto_wipe(xctx.buf, 64);
     if (raw_buf != NULL) { crypto_wipe(raw_buf, raw_buf_size); free(raw_buf); }
     if (enc_buf != NULL) { crypto_wipe(enc_buf, enc_buf_size); free(enc_buf); }
-    if (b64_buf != NULL) { crypto_wipe(b64_buf, b64_buf_size); free(b64_buf); }
 error_1:
-    crypto_wipe(b64_eph_pk, sizeof(b64_eph_pk));
     crypto_wipe(shared_key, sizeof(shared_key));
     crypto_wipe(eph_sk,     sizeof(eph_sk));
     crypto_wipe(eph_pk,     sizeof(eph_pk));
     crypto_wipe(pk,         sizeof(pk));
     return rv;
 }
+
+#define __check_read(x)   { if ((x) != 0) { err("cannot read");    goto error_2; } }
+#define __check_unlock(x) { if ((x) != 0) { err("bad encryption"); goto error_2; } }
 
 int decrypt(FILE* fp, FILE* key_fp)
 {
@@ -367,77 +299,75 @@ int decrypt(FILE* fp, FILE* key_fp)
             sk         [32],
             shared_key [32];
 
-    if (key_from_file(sk, key_fp) != 0) {
+    if (read_exactly(sk, 32, key_fp) != 0) {
         err("invalid secret key");
         goto error_1;
     }
 
-    if (key_from_file(eph_pk, fp) != 0) {
+    if (read_exactly(eph_pk, 32, fp) != 0) {
         err("invalid encryption");
         goto error_1;
     }
 
     crypto_key_exchange(shared_key, sk, eph_pk);
 
-    size_t b64_buf_size = 1024,
-           raw_buf_size = b64_decode_update_size(b64_buf_size),
-           enc_buf_size = xchacha20_update_size(raw_buf_size);
-    uint8_t *b64_buf = malloc(b64_buf_size),
-            *raw_buf = malloc(raw_buf_size),
-            *enc_buf = malloc(enc_buf_size);
-    if (b64_buf == NULL || raw_buf == NULL || enc_buf == NULL) {
+    size_t raw_buf_size = 4096 + 34,
+           dec_buf_size = 4096;
+    uint8_t *raw_buf = malloc(raw_buf_size),
+            *dec_buf = malloc(dec_buf_size);
+    if (raw_buf == NULL || dec_buf == NULL) {
         err("malloc failed");
         goto error_2;
     }
 
-    xchacha20_ctx  xctx; xchacha20_init(&xctx, shared_key);
-    b64_decode_ctx ctx;  b64_decode_init(&ctx);
+    uint8_t nonce[24] = { 0 };
+    uint8_t digest[64];
+    crypto_blake2b_ctx ctx;
+    crypto_blake2b_general_init(&ctx, 64, shared_key, 32);
 
-    for (;;) {
-        size_t n = fread(b64_buf, 1, b64_buf_size, fp);
-        if (ferror(fp)) {
-            err("cannot read");
-            goto error_2;
-        }
-
-        uint8_t* start = b64_buf;
-        while (start < b64_buf + n) {
-            uint8_t* end = memchr(start, '\n', n - (start - b64_buf));
-            if (end == NULL) {
-                end = b64_buf + n;
-            }
-            size_t m = b64_decode_update(&ctx, raw_buf, start, end - start);
-            size_t x = xchacha20_update(&xctx, enc_buf, raw_buf, m);
-            if (fwrite(enc_buf, 1, x, stdout) < x) {
-                err("cannot write");
+    int done = 0;
+    while (!done) {
+        // read head byte
+        uint8_t head;
+        __check_read(read_exactly(&head, 1, fp));
+        switch (head) {
+            default:
+                err("bad encryption");
                 goto error_2;
+            case 'b':
+            {
+                size_t length = 0;
+                __check_read(  read_exactly(raw_buf, 18, fp));
+                __check_unlock(ls_unlock_length(&length, nonce, shared_key, raw_buf));
+                __check_read(  read_exactly(raw_buf, length + 16, fp));
+                __check_unlock(ls_unlock_payload(dec_buf, nonce, shared_key, raw_buf, length));
+                if (write_exactly(dec_buf, length, stdout) != 0) {
+                    err("cannot write");
+                    goto error_2;
+                }
+                crypto_blake2b_update(&ctx, dec_buf, length);
+                break;
             }
-            start = end + 1;
-        }
+            case 'd':
+            {
+                // compare our digest vs real
+                crypto_blake2b_final(&ctx, digest);
+                __check_read(  read_exactly(raw_buf, 64, fp));
+                __check_unlock(crypto_verify64(digest, raw_buf));
 
-        if (feof(fp)) {
-            size_t m = b64_decode_final(&ctx, raw_buf);
-            size_t x = xchacha20_update(&xctx, enc_buf, raw_buf, m);
-            if (fwrite(enc_buf, 1, x, stdout) < x) {
-                err("cannot write");
-                goto error_2;
+                if (fread(raw_buf, 1, 1, fp) == 1 || !feof(fp)) {
+                    err("expected to be EOF");
+                    goto error_2;
+                }
+                done = 1;
+                break;
             }
-
-            x = xchacha20_final(&xctx, enc_buf);
-            if (fwrite(enc_buf, 1, x, stdout) < x) {
-                err("cannot write");
-                goto error_2;
-            }
-            break;
         }
     }
 
 error_2:
-    crypto_wipe(ctx.buf, 4);
-    crypto_wipe(xctx.buf, 64);
-    if (b64_buf != NULL) { crypto_wipe(b64_buf, b64_buf_size); free(b64_buf); }
     if (raw_buf != NULL) { crypto_wipe(raw_buf, raw_buf_size); free(raw_buf); }
-    if (enc_buf != NULL) { crypto_wipe(enc_buf, enc_buf_size); free(enc_buf); }
+    if (dec_buf != NULL) { crypto_wipe(dec_buf, dec_buf_size); free(dec_buf); }
 error_1:
     crypto_wipe(eph_pk,     sizeof(eph_pk));
     crypto_wipe(sk,         sizeof(sk));

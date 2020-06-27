@@ -14,11 +14,11 @@ full: clean all tests
 kurv: kurv.o base64/base64.o monocypher/monocypher.o
 	$(CC) -o kurv $^
 
-luck: luck.o base64/base64.o monocypher/monocypher.o
+luck: luck.o monocypher/monocypher.o
 	$(CC) -o luck $^
 
 clean:
-	-rm kurv
+	-rm kurv luck
 	-rm *.o
 	-rm monocypher/*.o
 	-rm -rf test
