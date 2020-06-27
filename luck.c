@@ -24,15 +24,15 @@ static const char* HELP =
     "usage: luck -h\n"
     "       luck -g <base>\n"
     "       luck -wk <key>\n"
-    "       luck (-ek <key> | -dk <key>) [FILE]\n"
+    "       luck -{e|d}k <key> [file]\n"
     "\nargs:\n"
-    "  FILE       file for encryption/decryption (default: stdin).\n"
+    "  file       file for encryption/decryption (default: stdin).\n"
     "\noptions:\n"
     "  -h         show help\n"
     "  -g <base>  generate keypair in <key>.sk (secret) and <key>.pk (public)\n"
-    "  -wk <key>  print public key of secret key <key>\n"
-    "  -ek <key>  encrypt FILE for receipient with pubkey <key>\n"
-    "  -dk <key>  decrypt FILE with secret key <key>\n"
+    "  -wk <key>  print public key for secret key <key>\n"
+    "  -ek <key>  encrypt file for receipient with pubkey <key>\n"
+    "  -dk <key>  decrypt file with secret key <key>\n"
     ;
 
 static const uint8_t HEAD_BLOCK  = 'b';
@@ -44,19 +44,10 @@ int encrypt(FILE *fp, FILE *key_fp);
 int decrypt(FILE *fp, FILE *key_fp);
 
 
-static void increment_nonce(uint8_t *buf)
+static void increment_nonce(uint8_t buf[24])
 {
-    int carry = 1;
-    for (size_t i = 0; carry && i < 24; i++) {
-        carry = buf[i] == 255;
+    for (size_t i = 0; i < 24 && buf[i] == 255; i++)
         buf[i]++;
-    }
-}
-
-static void _b2i(uint8_t *buf, size_t n)
-{
-    buf[0] = (n)      & 0xFF;
-    buf[1] = (n >> 8) & 0xFF;
 }
 
 void ls_lock(      uint8_t *output,  // input_size + 34
@@ -65,7 +56,8 @@ void ls_lock(      uint8_t *output,  // input_size + 34
              const uint8_t *input, size_t input_size)
 {
     uint8_t length[2];
-    _b2i(length, input_size);
+    length[0] = (input_size)      & 0xFF;
+    length[1] = (input_size >> 8) & 0xFF;
 
     increment_nonce(nonce);
     crypto_lock(output,
@@ -256,13 +248,15 @@ int encrypt(FILE* fp, FILE* key_fp)
             err("cannot read");
             goto error_2;
         }
-        crypto_blake2b_update(&ctx, raw_buf, n);
-        ls_lock(enc_buf,
-                nonce,
-                shared_key,
-                raw_buf, n);
-        __check_write(write_exactly(&HEAD_BLOCK, 1, stdout));
-        __check_write(write_exactly(enc_buf, n + 34, stdout));
+        if (n > 0) {
+            crypto_blake2b_update(&ctx, raw_buf, n);
+            ls_lock(enc_buf,
+                    nonce,
+                    shared_key,
+                    raw_buf, n);
+            __check_write(write_exactly(&HEAD_BLOCK, 1, stdout));
+            __check_write(write_exactly(enc_buf, n + 34, stdout));
+        }
         if (feof(fp)) {
             crypto_blake2b_final(&ctx, digest);
             __check_write(write_exactly(&HEAD_DIGEST, 1, stdout));
