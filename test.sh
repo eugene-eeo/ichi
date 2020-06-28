@@ -25,19 +25,23 @@ setup() {
     kurv -g test/id
     kurv -g test/id2
 
-    kurv -sP test/id.priv README > test/signed.txt
+    kurv -sk test/id.priv README > test/signed.txt
+    [ -f 'test/signed.txt' ]
+
+    # shellcheck disable=SC2002
+    cat README | kurv -sk test/id.priv > test/signed.txt
     [ -f 'test/signed.txt' ]
 
     # file w/o signature should fail
-    run kurv -cp test/id.pub README
+    run kurv -ck test/id.pub README
     [ "$status" -ne 0 ]
 
     # file with signature
-    run kurv -cp test/id.pub test/signed.txt
+    run kurv -ck test/id.pub test/signed.txt
     [ "$status" -eq 0 ]
 
     # should fail
-    run kurv -cp test/id2.pub test/signed.txt
+    run kurv -ck test/id2.pub test/signed.txt
     [ "$status" -ne 0 ]
 }
 
@@ -46,47 +50,45 @@ setup() {
     kurv -g test/id
     kurv -g test/id2
 
-    kurv -sP test/id.priv README \
-        | kurv -sP test/id2.priv \
-        | kurv -cp test/id2.pub -o \
-        | kurv -cp test/id.pub -o
+    kurv -sk test/id.priv README > test/f1
+    kurv -sk test/id.priv test/f1 > test/f2
+
+    # shellcheck disable=SC2002
+    cat test/f2 | kurv -cp test/id2.pub
+    # shellcheck disable=SC2002
+    cat test/f1 | kurv -cp test/id1.pub
 }
 
 @test "checking options" {
     # check -i and -o options are respected
     kurv -g test/id
-    kurv -sP test/id.priv README > test/output.txt
+    kurv -sk test/id.priv README > test/output.txt
 
     # with -i specified
-    run kurv -cp test/id.pub -i test/output.txt
+    run kurv -ck test/id.pub -i test/output.txt
     [ "$status" -eq 0 ]
     [ "$output" = 'test/id.pub' ]
-
-    # with -o specified
-    run kurv -cp test/id.pub -o test/output.txt
-    [ "$status" -eq 0 ]
-    [ "$output" = "$(cat README)" ]
-
-    # with -i and -o specified
-    run kurv -cp test/id.pub -io test/output.txt
-    [ "$status" -eq 0 ]
-    [ "$output" = "test/id.pub
-$(cat README)" ]
 }
 
 @test "keyring support" {
     kurv -g test/keyring/a
     kurv -g test/keyring/b
     kurv -g test/keyring/c
+    kurv -g test/id
+
+    kurv -sk test/id.priv README > test/u.txt
+    KURV_KEYRING="test/keyring/" run kurv -c u.txt
+    [ "$status" -ne 0 ]
 
     for id in test/keyring/{a,b,c}; do
-        kurv -sP "$id.priv" README > test/output.txt
+        kurv -sk "$id.priv" README > test/output.txt
 
         # without KURV_KEYRING
         run kurv -c test/output.txt
         [ "$status" -ne 0 ]
 
         KURV_KEYRING="test/keyring/" run kurv -ci test/output.txt
+        echo "$output"
         [ "$status" -eq 0 ]
         [ "$output" = "$id.pub" ]
 
@@ -99,6 +101,6 @@ $(cat README)" ]
 
 @test "detach" {
     kurv -g test/id
-    output=$(kurv -sP test/id.priv monocypher/monocypher.c | kurv -d)
+    output=$(kurv -sk test/id.priv monocypher/monocypher.c | kurv -d)
     [ "$output" = "$(cat monocypher/monocypher.c)" ]
 }

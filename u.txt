@@ -1,0 +1,38 @@
+
+
+  █▄▀ █░█ █▀█ █░█
+  █░█ █▄█ █▀▄ ▀▄▀
+
+  $ kurv_
+
+  Tool to sign files using EdDSA (Ed25519 + Blake2b)
+  Example workflow:
+
+    1. generate a keypair:
+
+       $ kurv -g id
+       $ ls
+       file.txt id.pub id.priv
+
+    2. signing a file:
+
+       $ kurv -sP id.priv file.txt > file-signed.txt
+
+    3. check signature:
+       if a public key file is not specified, then kurv
+       searches for public keys in $KURV_KEYRING.
+
+       $ kurv -cp id.pub file-signed.txt > file-signed.txt
+       $ KURV_KEYRING='...' kurv -c file-signed.txt
+
+
+    4. detach signature:
+       remove a signature from a file:
+
+       $ kurv -d file-signed.txt
+
+
+----BEGIN KURV SIGNATURE----
+JOkEvId/UzKKB8CLFPOQMZ5ZwO5RB8Ud0BLowtP019NN
+cEp4MaZGbr6DjE535gN+fQgKcHTajvO+BADOfSLwDg==
+----END KURV SIGNATURE----

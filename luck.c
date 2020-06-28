@@ -61,13 +61,13 @@ void ls_lock(      uint8_t *output,  // input_size + 34
 
     increment_nonce(nonce);
     crypto_lock(output,
-                output + 16 /* mac */,
+                output + 16, /* mac */
                 key, nonce,
                 length, 2);
 
     increment_nonce(nonce);
     crypto_lock(output + 18,
-                output + 18 + 16 /* mac */,
+                output + 18 + 16, /* mac */
                 key, nonce,
                 input, input_size);
 }
