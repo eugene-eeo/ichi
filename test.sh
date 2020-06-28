@@ -88,7 +88,6 @@ setup() {
         [ "$status" -ne 0 ]
 
         KURV_KEYRING="test/keyring/" run kurv -ci test/output.txt
-        echo "$output"
         [ "$status" -eq 0 ]
         [ "$output" = "$id.pub" ]
 
