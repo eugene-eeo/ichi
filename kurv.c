@@ -64,6 +64,24 @@ int _write(FILE* fp, const void* buf, size_t bufsize)
     return fwrite(buf, 1, bufsize, fp) == bufsize ? 0 : -1;
 }
 
+// decode base64 signature into sig
+int decode_signature(uint8_t* sig, const uint8_t* b64_sig_buf) {
+    int rv = 1;
+    uint8_t b64_sig[B64_SIG_SIZE];
+
+    memcpy(b64_sig,      b64_sig_buf,      44);
+    memcpy(b64_sig + 44, b64_sig_buf + 45, 44);
+
+    if (b64_sig_buf[44] == '\n'
+            && b64_validate(b64_sig, B64_SIG_SIZE) == 0
+            && b64_decoded_size(b64_sig, B64_SIG_SIZE) == 64) {
+        b64_decode(sig, b64_sig, B64_SIG_SIZE);
+        rv = 0;
+    }
+    crypto_wipe(b64_sig, B64_SIG_SIZE);
+    return rv;
+}
+
 int key_from_file(FILE* fp, uint8_t key[32])
 {
     int rv = 1;
@@ -136,17 +154,10 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
                 sig_buf = buf + start_size;
             }
 
-            if (sig_buf[44] != '\n') {
+            if (decode_signature(sig, sig_buf) != 0) {
                 err("malformed signature");
                 goto error;
             }
-            memmove(sig_buf + 44, sig_buf + 45, 44);
-            if (b64_validate(sig_buf, B64_SIG_SIZE) != 0
-                    || b64_decoded_size(sig_buf, B64_SIG_SIZE) != 64) {
-                err("malformed signature");
-                goto error;
-            }
-            b64_decode(sig, sig_buf, B64_SIG_SIZE);
             crypto_blake2b_final(&ctx, digest);
             rv = 0;
             break;
@@ -394,6 +405,7 @@ int detach(FILE* fp)
            end_size   = strlen(SIG_END),
            total_size = start_size + sig_size + end_size;
 
+    uint8_t sig [64];
     size_t tmp_size = 0;
     uint8_t *buf = malloc(1024),
             *tmp = malloc(1024);
@@ -425,13 +437,7 @@ int detach(FILE* fp)
                 sig_buf = buf + start_size;
             }
 
-            if (sig_buf[44] != '\n') {
-                err("malformed signature");
-                goto error;
-            }
-            memmove(sig_buf + 44, sig_buf + 45, 44);
-            if (b64_validate(sig_buf, B64_SIG_SIZE) != 0
-                    || b64_decoded_size(sig_buf, B64_SIG_SIZE) != 64) {
+            if (decode_signature(sig, sig_buf) != 0) {
                 err("malformed signature");
                 goto error;
             }
@@ -453,6 +459,7 @@ int detach(FILE* fp)
 error:
     _free(buf, 1024);
     _free(tmp, 1024);
+    crypto_wipe(sig, 64);
     return rv;
 }
 
