@@ -387,6 +387,7 @@ int check_keyring(FILE* fp, int show_id)
         }
         // found it!
         rv = 0;
+        fclose(key_fp);
         goto error;
     }
 

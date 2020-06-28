@@ -51,12 +51,12 @@ setup() {
     kurv -g test/id2
 
     kurv -sk test/id.priv README > test/f1
-    kurv -sk test/id.priv test/f1 > test/f2
+    kurv -sk test/id2.priv test/f1 > test/f2
 
     # shellcheck disable=SC2002
-    cat test/f2 | kurv -cp test/id2.pub
+    cat test/f2 | kurv -ck test/id2.pub
     # shellcheck disable=SC2002
-    cat test/f1 | kurv -cp test/id1.pub
+    cat test/f1 | kurv -ck test/id.pub
 }
 
 @test "checking options" {
