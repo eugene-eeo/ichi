@@ -16,13 +16,13 @@
 
     2. signing a file:
 
-       $ kurv -sP id.priv file.txt > file-signed.txt
+       $ kurv -sk id.priv file.txt > file-signed.txt
 
     3. check signature:
        if a public key file is not specified, then kurv
        searches for public keys in $KURV_KEYRING.
 
-       $ kurv -cp id.pub file-signed.txt > file-signed.txt
+       $ kurv -ck id.pub file-signed.txt > file-signed.txt
        $ KURV_KEYRING='...' kurv -c file-signed.txt
 
 

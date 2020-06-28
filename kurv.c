@@ -27,7 +27,7 @@
     }\
 }
 static const char HELP[] =
-    "usage: kurv -h | -?\n"
+    "usage: kurv -h\n"
     "       kurv -g <base>\n"
     "       kurv -d [FILE]\n"
     "       kurv -s -k <key> [FILE]\n"
@@ -35,7 +35,7 @@ static const char HELP[] =
     "\nargs:\n"
     "  FILE       (signed) file, defaults to stdin.\n"
     "\noptions:\n"
-    "  -h, -?      show help page.\n"
+    "  -h          show help page.\n"
     "  -g <base>   generate keypair in <base>.priv and <base>.pub.\n"
     "  -d          print FILE contents without signature.\n"
     "  -k <key>    specify key file for signing / checking.\n"
@@ -43,6 +43,7 @@ static const char HELP[] =
     "  -c          check FILE using public key <key>.\n"
     "              if <key> is not specified, try '$KURV_KEYRING/*.pub'\n"
     "              one by one.\n"
+    "  -i          print path to public key used on successful check.\n\n"
     ;
 
 static const char SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
@@ -475,12 +476,9 @@ int main(int argc, char** argv)
     int action = 0;
     int rv = 1;
     int c;
-    while ((c = getopt(argc, argv, "?hg:sck:di")) != -1)
+    while ((c = getopt(argc, argv, "hg:sck:di")) != -1)
         switch (c) {
-        default:
-            err("invalid usage. see kurv -h");
-            goto error;
-        case '?':
+        default: err("invalid usage. see kurv -h"); goto error;
         case 'h':
             printf("%s", HELP);
             rv = 0;
@@ -519,6 +517,7 @@ int main(int argc, char** argv)
         }
     }
     switch (action) {
+    default:  err("invalid usage. see kurv -h"); break;
     case 'g': rv = generate_keypair(base); break;
     case 's': rv = sign(fp, key_fp); break;
     case 'c': rv = key_fp == NULL
