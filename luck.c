@@ -435,9 +435,5 @@ out:
         err("cannot close stdout");
         rv = 1;
     }
-    if (fclose(stderr) != 0) {
-        err("cannot close stderr");
-        rv = 1;
-    }
     return rv;
 }
