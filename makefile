@@ -23,8 +23,9 @@ clean:
 	-rm monocypher/*.o
 	-rm -rf test
 
-tests: kurv
-	bats test.sh
+tests: kurv luck
+	bats test_kurv.sh
+	bats test_luck.sh
 
 install: kurv
 	install -d $(DESTDIR)$(PREFIX)/bin/

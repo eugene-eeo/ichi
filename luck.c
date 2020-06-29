@@ -8,6 +8,7 @@
 #include <sys/random.h>
 
 #include "monocypher/monocypher.h"
+#include "utils.c"
 
 #define err(...) {\
     fprintf(stderr, "luck: ");\
@@ -102,23 +103,6 @@ int ls_unlock_payload(uint8_t        *output,
                          input + 16, input_size);
 }
 
-int _fclose(FILE** fp)
-{
-    int rv = fclose(*fp);
-    *fp = NULL;
-    return rv;
-}
-
-int write_exactly(const uint8_t *buf, size_t bufsize, FILE* fp)
-{
-    return (fwrite(buf, 1, bufsize, fp) == bufsize) ? 0 : -1;
-}
-
-int read_exactly(uint8_t *buf, size_t bufsize, FILE* fp)
-{
-    return (fread(buf, 1, bufsize, fp) == bufsize) ? 0 : -1;
-}
-
 int generate_keypair(char *base)
 {
     int rv = 1;
@@ -134,7 +118,7 @@ int generate_keypair(char *base)
 
     size_t len = strlen(base);
     FILE* fp;
-    char* fn = calloc(1, strlen(base) + 4);
+    char* fn = malloc(len + 4);
     if (fn == NULL) {
         err("cannot malloc");
         goto error_1;
@@ -168,7 +152,7 @@ int generate_keypair(char *base)
 error_2:
     if (fp != NULL)
         fclose(fp);
-    free(fn);
+    _free(fn, len + 4);
 error_1:
     crypto_wipe(sk, sizeof(sk));
     crypto_wipe(pk, sizeof(pk));
@@ -181,7 +165,7 @@ int write_pubkey(FILE* fp)
     uint8_t sk[32],
             pk[32];
 
-    if (read_exactly(sk, 32, fp) != 0) {
+    if (_read(fp, sk, 32) != 0) {
         err("invalid secret key");
         goto error;
     }
@@ -212,7 +196,7 @@ int encrypt(FILE* fp, FILE* key_fp)
             pk         [32],
             shared_key [32];
 
-    if (read_exactly(pk, 32, key_fp) != 0) {
+    if (_read(key_fp, pk, 32) != 0) {
         err("invalid public key");
         goto error_1;
     }
@@ -236,7 +220,7 @@ int encrypt(FILE* fp, FILE* key_fp)
     }
 
     uint8_t nonce[24] = { 0 };
-    __check_write(write_exactly(eph_pk, sizeof(eph_pk), stdout));
+    __check_write(_write(stdout, eph_pk, sizeof(eph_pk)));
 
     uint8_t digest[64];
     crypto_blake2b_ctx ctx;
@@ -254,21 +238,21 @@ int encrypt(FILE* fp, FILE* key_fp)
                     nonce,
                     shared_key,
                     raw_buf, n);
-            __check_write(write_exactly(&HEAD_BLOCK, 1, stdout));
-            __check_write(write_exactly(enc_buf, n + 34, stdout));
+            __check_write(_write(stdout, &HEAD_BLOCK, 1));
+            __check_write(_write(stdout, enc_buf, n + 34));
         }
         if (feof(fp)) {
             crypto_blake2b_final(&ctx, digest);
-            __check_write(write_exactly(&HEAD_DIGEST, 1, stdout));
-            __check_write(write_exactly(digest, 64, stdout));
+            __check_write(_write(stdout, &HEAD_DIGEST, 1));
+            __check_write(_write(stdout, digest, 64));
             break;
         }
     }
     rv = 0;
 
 error_2:
-    if (raw_buf != NULL) { crypto_wipe(raw_buf, raw_buf_size); free(raw_buf); }
-    if (enc_buf != NULL) { crypto_wipe(enc_buf, enc_buf_size); free(enc_buf); }
+    _free(raw_buf, raw_buf_size);
+    _free(enc_buf, enc_buf_size);
 error_1:
     crypto_wipe(shared_key, sizeof(shared_key));
     crypto_wipe(eph_sk,     sizeof(eph_sk));
@@ -287,12 +271,12 @@ int decrypt(FILE* fp, FILE* key_fp)
             sk         [32],
             shared_key [32];
 
-    if (read_exactly(sk, 32, key_fp) != 0) {
+    if (_read(key_fp, sk, 32) != 0) {
         err("invalid secret key");
         goto error_1;
     }
 
-    if (read_exactly(eph_pk, 32, fp) != 0) {
+    if (_read(fp, eph_pk, 32) != 0) {
         err("invalid encryption");
         goto error_1;
     }
@@ -317,7 +301,7 @@ int decrypt(FILE* fp, FILE* key_fp)
     while (!done) {
         // read head byte
         uint8_t head;
-        __check_read(read_exactly(&head, 1, fp));
+        __check_read(_read(fp, &head, 1));
         switch (head) {
             default:
                 err("bad encryption");
@@ -325,11 +309,11 @@ int decrypt(FILE* fp, FILE* key_fp)
             case HEAD_BLOCK:
             {
                 size_t length = 0;
-                __check_read(  read_exactly(raw_buf, 18, fp));
+                __check_read(  _read(fp, raw_buf, 18));
                 __check_unlock(ls_unlock_length(&length, nonce, shared_key, raw_buf));
-                __check_read(  read_exactly(raw_buf, length + 16, fp));
+                __check_read(  _read(fp, raw_buf, length + 16));
                 __check_unlock(ls_unlock_payload(dec_buf, nonce, shared_key, raw_buf, length));
-                if (write_exactly(dec_buf, length, stdout) != 0) {
+                if (_write(stdout, dec_buf, length) != 0) {
                     err("cannot write");
                     goto error_2;
                 }
@@ -340,7 +324,7 @@ int decrypt(FILE* fp, FILE* key_fp)
             {
                 // compare our digest vs real
                 crypto_blake2b_final(&ctx, digest);
-                __check_read(  read_exactly(raw_buf, 64, fp));
+                __check_read(  _read(fp, raw_buf, 64));
                 __check_unlock(crypto_verify64(digest, raw_buf));
                 // expect EOF - do one extra read here otherwise we cannot
                 // detect EOF.
@@ -356,8 +340,8 @@ int decrypt(FILE* fp, FILE* key_fp)
     }
 
 error_2:
-    if (raw_buf != NULL) { crypto_wipe(raw_buf, raw_buf_size); free(raw_buf); }
-    if (dec_buf != NULL) { crypto_wipe(dec_buf, dec_buf_size); free(dec_buf); }
+    _free(raw_buf, raw_buf_size);
+    _free(dec_buf, dec_buf_size);
 error_1:
     crypto_wipe(eph_pk,     sizeof(eph_pk));
     crypto_wipe(sk,         sizeof(sk));

@@ -11,13 +11,14 @@
 
 #include "base64/base64.h"
 #include "monocypher/monocypher.h"
+#include "utils.c"
 
 #define READ_SIZE (4096)
 #define B64_KEY_SIZE 44  // b64_encoded_size(32)
 #define B64_SIG_SIZE 88  // b64_encoded_size(64)
 #define SEE_USAGE "invalid usage: see kurv -h"
 #define err(...) {\
-    fwrite("kurv: ", 1, 6, stderr);\
+    fprintf(stderr, "kurv: ");\
     fprintf(stderr, __VA_ARGS__);\
     if (errno) {\
         fprintf(stderr, ": ");\
@@ -55,16 +56,6 @@ int check(FILE* fp, FILE* key_fp, int show_id, char* id);
 int check_keyring(FILE* fp, int show_id);
 int detach(FILE* fp);
 
-int _read(FILE* fp, uint8_t* buf, size_t bufsize)
-{
-    return fread(buf, 1, bufsize, fp) == bufsize ? 0 : -1;
-}
-
-int _write(FILE* fp, const void* buf, size_t bufsize)
-{
-    return fwrite(buf, 1, bufsize, fp) == bufsize ? 0 : -1;
-}
-
 // decode base64 signature into sig
 int decode_signature(uint8_t* sig, const uint8_t* b64_sig_buf) {
     int rv = 1;
@@ -97,20 +88,6 @@ int key_from_file(FILE* fp, uint8_t key[32])
     return rv;
 }
 
-int _fclose(FILE** fp)
-{
-    int rv = fclose(*fp);
-    *fp = NULL;
-    return rv;
-}
-
-void _free(void *buf, size_t size) {
-    if (buf != NULL) {
-        crypto_wipe(buf, size);
-        free(buf);
-    }
-}
-
 int str_endswith(char* str, char* suffix)
 {
     size_t m = strlen(str),
@@ -128,8 +105,8 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
            total_size = start_size + sig_size + end_size;
 
     size_t tmp_size = 0;
-    uint8_t *buf = malloc(1024),
-            *tmp = malloc(1024);
+    uint8_t *buf = malloc(READ_SIZE),
+            *tmp = malloc(READ_SIZE);
     if (buf == NULL || tmp == NULL) {
         err("malloc");
         goto error;
@@ -139,7 +116,7 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
     crypto_blake2b_init(&ctx);
 
     for (;;) {
-        size_t n = fread(buf, 1, 1024, fp);
+        size_t n = fread(buf, 1, READ_SIZE, fp);
         // find signature
         if (feof(fp)) {
             uint8_t *sig_buf;
@@ -173,8 +150,8 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
     }
 
 error:
-    _free(buf, 1024);
-    _free(tmp, 1024);
+    _free(buf, READ_SIZE);
+    _free(tmp, READ_SIZE);
     crypto_wipe((uint8_t *) &ctx, sizeof(ctx));
     return rv;
 }
@@ -262,7 +239,7 @@ int sign(FILE* fp, FILE* key_fp)
     crypto_blake2b_init(&ctx);
 
     for (;;) {
-        size_t n = fread(buf, 1, 1024, fp);
+        size_t n = fread(buf, 1, READ_SIZE, fp);
         if (ferror(fp)) {
             err("cannot read");
             goto error_2;
@@ -276,11 +253,11 @@ int sign(FILE* fp, FILE* key_fp)
             crypto_blake2b_final(&ctx, digest);
             crypto_sign(sig, sk, NULL, digest, 64);
             b64_encode(b64_sig, sig, 64);
-            if (_write(stdout, SIG_START, strlen(SIG_START)) != 0
+            if (_write(stdout, (uint8_t*) SIG_START, strlen(SIG_START)) != 0
                     || _write(stdout, b64_sig, 44) != 0
-                    || _write(stdout, "\n", 1) != 0
+                    || _write(stdout, (uint8_t*) "\n", 1) != 0
                     || _write(stdout, b64_sig + 44, B64_SIG_SIZE - 44) != 0
-                    || _write(stdout, SIG_END, strlen(SIG_END)) != 0) {
+                    || _write(stdout, (uint8_t*) SIG_END, strlen(SIG_END)) != 0) {
                 err("cannot write to stdout");
                 goto error_2;
             }
@@ -290,7 +267,7 @@ int sign(FILE* fp, FILE* key_fp)
     }
 
 error_2:
-    _free(buf, 1024);
+    _free(buf, READ_SIZE);
     crypto_wipe((uint8_t *) &ctx, sizeof(ctx));
 error:
     crypto_wipe(sk,      32);
@@ -409,15 +386,15 @@ int detach(FILE* fp)
 
     uint8_t sig [64];
     size_t tmp_size = 0;
-    uint8_t *buf = malloc(1024),
-            *tmp = malloc(1024);
+    uint8_t *buf = malloc(READ_SIZE),
+            *tmp = malloc(READ_SIZE);
     if (buf == NULL || tmp == NULL) {
         err("malloc");
         goto error;
     }
 
     for (;;) {
-        size_t n = fread(buf, 1, 1024, fp);
+        size_t n = fread(buf, 1, READ_SIZE, fp);
         // find signature
         if (feof(fp)) {
             uint8_t *sig_buf;
@@ -459,8 +436,8 @@ int detach(FILE* fp)
     }
 
 error:
-    _free(buf, 1024);
-    _free(tmp, 1024);
+    _free(buf, READ_SIZE);
+    _free(tmp, READ_SIZE);
     crypto_wipe(sig, 64);
     return rv;
 }
