@@ -1,5 +1,6 @@
 /kurv
 /luck
+/b64
 *.o
 /test/
 /id.priv

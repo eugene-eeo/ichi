@@ -72,7 +72,8 @@ int b64_validate(const uint8_t input[], const size_t input_size) {
         return -1;
     }
     for (size_t i = 0; i < input_size; i++)
-        if (!b64_isvalidchar(input[i]))
+        if (!b64_isvalidchar(input[i])
+                || (input[i] == '=' && i != input_size - 1 && i != input_size - 2))
             return -1;
     return 0;
 }
@@ -83,8 +84,8 @@ void b64_decode(uint8_t output[], const uint8_t input[], const size_t input_size
     for (i=0, j=0; i < input_size; i+=4, j+=3) {
         v = b64invs[input[i]-43];
         v = (v << 6) | b64invs[input[i+1]-43];
-        v = input[i+2]=='=' ? v << 6 : (v << 6) | b64invs[input[i+2]-43];
-        v = input[i+3]=='=' ? v << 6 : (v << 6) | b64invs[input[i+3]-43];
+        v = input[i+2] == '=' ? v << 6 : (v << 6) | b64invs[input[i+2]-43];
+        v = input[i+3] == '=' ? v << 6 : (v << 6) | b64invs[input[i+3]-43];
 
         output[j] = (v >> 16) & 0xFF;
         if (input[i+2] != '=')
@@ -110,30 +111,22 @@ size_t b64_encode_update(b64_encode_ctx *ctx,
 {
     size_t i = 0; // where in buf
     size_t j = 0; // where in out
-    // if we have any outstanding data from before
     if (ctx->bufsize > 0) {
-        // load into ctx->buf first
         for (; (ctx->bufsize < 3) && (i < bufsize); i++, ctx->bufsize++)
             ctx->buf[ctx->bufsize] = buf[i];
         if (ctx->bufsize < 3)
             return j;
-        // consume to produce 4 characters in out
+        // consume
         b64_encode(out + j, ctx->buf, 3);
         ctx->bufsize = 0;
         j += 4;
     }
-    for (; i < bufsize; i += 3) {
-        // if we don't have enough, save in buf for later.
-        if (i + 1 >= bufsize || i + 2 >= bufsize)
-            break;
+    for (; i + 3 < bufsize; i += 3, j += 4)
         b64_encode(out + j, buf + i, 3);
-        j += 4;
-    }
     for (; i < bufsize; i++, ctx->bufsize++)
         ctx->buf[ctx->bufsize] = buf[i];
     return j;
 }
-
 
 size_t b64_encode_final(b64_encode_ctx *ctx,
                         uint8_t *out)
@@ -143,3 +136,59 @@ size_t b64_encode_final(b64_encode_ctx *ctx,
     ctx->bufsize = 0;
     return n;
 }
+
+void b64_decode_init(b64_decode_ctx *ctx)
+{
+    ctx->bufsize = 0;
+    ctx->eos = 0;
+    ctx->err = 0;
+}
+
+size_t b64_decode_update_size(size_t input_size)
+{
+    // conservative estimate...
+    size_t ret = input_size / 4 * 3;
+    return ret + 3;
+}
+
+size_t b64_decode_update(b64_decode_ctx *ctx,
+                         uint8_t *out,
+                         const uint8_t *buf, size_t bufsize)
+{
+    if (ctx->eos) {
+        ctx->err = 1;
+        return 0;
+    }
+    size_t i = 0, // where in buf
+           j = 0; // where in out
+    for (; i < bufsize && !ctx->eos; ) {
+        for (; (ctx->bufsize < 4) && (i < bufsize); i++, ctx->bufsize++)
+            ctx->buf[ctx->bufsize] = buf[i];
+        if (ctx->bufsize < 4)
+            return j;
+        // consume buf
+        ctx->bufsize = 0;
+        ctx->err = b64_validate(ctx->buf, 4) != 0;
+        if (ctx->err)
+            return 0;
+        b64_decode(out + j, ctx->buf, 4);
+        j += 3;
+        if (ctx->buf[2] == '=') { ctx->eos = 1; j--; }
+        if (ctx->buf[3] == '=') { ctx->eos = 1; j--; }
+    }
+    if (ctx->eos && i != bufsize) {
+        ctx->err = 1;
+        return 0;
+    }
+    return j;
+}
+
+void b64_decode_final(b64_decode_ctx *ctx)
+{
+    ctx->err = ctx->bufsize != 0;
+    ctx->eos = 1;
+    ctx->bufsize = 0;
+}
+
+int b64_decode_eos(b64_decode_ctx *ctx) { return (int)ctx->eos; }
+int b64_decode_err(b64_decode_ctx *ctx) { return (int)ctx->err; }
