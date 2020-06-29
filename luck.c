@@ -303,6 +303,7 @@ int decrypt(FILE* fp, FILE* key_fp)
 
     uint8_t nonce[24] = { 0 };
     uint8_t digest[64];
+    uint8_t head;
     size_t length; // length of each BLOCK chunk
     crypto_blake2b_ctx ctx;
     crypto_blake2b_general_init(&ctx, 64, shared_key, 32);
@@ -310,7 +311,6 @@ int decrypt(FILE* fp, FILE* key_fp)
     int done = 0;
     while (!done) {
         // read head byte
-        uint8_t head;
         __check_read(_read(fp, &head, 1));
         switch (head) {
             default:
@@ -331,7 +331,6 @@ int decrypt(FILE* fp, FILE* key_fp)
             }
             case HEAD_DIGEST:
             {
-                // compare our digest vs real
                 crypto_blake2b_final(&ctx, digest);
                 __check_read(  _read(fp, raw_buf, 64));
                 __check_unlock(crypto_verify64(digest, raw_buf));
@@ -353,6 +352,7 @@ error_2:
     _free(dec_buf, dec_buf_size);
 error_1:
     length = 0;
+    head = 0;
     crypto_wipe(digest,     sizeof(digest));
     crypto_wipe(nonce,      sizeof(nonce));
     crypto_wipe(eph_pk,     sizeof(eph_pk));
