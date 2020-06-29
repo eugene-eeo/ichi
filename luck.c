@@ -25,15 +25,15 @@ static const char* HELP =
     "usage: luck -h\n"
     "       luck -g <base>\n"
     "       luck -wk <key>\n"
-    "       luck -{e|d}k <key> [file]\n"
+    "       luck -{e|d}k <key> [FILE]\n"
     "\nargs:\n"
-    "  file       file for encryption/decryption (default: stdin).\n"
+    "  FILE       file for encryption/decryption (default: stdin).\n"
     "\noptions:\n"
     "  -h         show help\n"
     "  -g <base>  generate keypair in <key>.sk (secret) and <key>.pk (public)\n"
     "  -wk <key>  print public key for secret key <key>\n"
-    "  -ek <key>  encrypt file for receipient with pubkey <key>\n"
-    "  -dk <key>  decrypt file with secret key <key>\n"
+    "  -ek <key>  encrypt FILE for receipient with pubkey <key>\n"
+    "  -dk <key>  decrypt FILE with secret key <key>\n"
     ;
 
 static const uint8_t HEAD_BLOCK  = 'b';

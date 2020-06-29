@@ -34,7 +34,7 @@ static const char HELP[] =
     "       kurv -s -k <key> [FILE]\n"
     "       kurv -c [-k <key>] [-i] [FILE]\n"
     "\nargs:\n"
-    "  FILE       (signed) file, defaults to stdin.\n"
+    "  FILE        (signed) file (defaults: stdin)\n"
     "\noptions:\n"
     "  -h          show help page.\n"
     "  -g <base>   generate keypair in <base>.priv and <base>.pub.\n"
