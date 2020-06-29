@@ -8,7 +8,7 @@
 #include <sys/random.h>
 
 #include "monocypher/monocypher.h"
-#include "utils.c"
+#include "utils.h"
 
 #define err(...) {\
     fprintf(stderr, "luck: ");\

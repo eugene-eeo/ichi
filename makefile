@@ -11,10 +11,10 @@ full: clean all tests
 %.o: %.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-kurv: kurv.o base64/base64.o monocypher/monocypher.o
+kurv: kurv.o base64/base64.o monocypher/monocypher.o utils.o
 	$(CC) -o kurv $^
 
-luck: luck.o monocypher/monocypher.o
+luck: luck.o monocypher/monocypher.o utils.o
 	$(CC) -o luck $^
 
 clean:

@@ -11,7 +11,7 @@
 
 #include "base64/base64.h"
 #include "monocypher/monocypher.h"
-#include "utils.c"
+#include "utils.h"
 
 #define READ_SIZE (4096)
 #define B64_KEY_SIZE 44  // b64_encoded_size(32)
