@@ -29,20 +29,4 @@ size_t b64_encode_update(b64_encode_ctx *ctx,
                          const uint8_t buf[], size_t bufsize);
 size_t b64_encode_final(b64_encode_ctx *ctx,
                         uint8_t out[]);
-
-typedef struct {
-    uint8_t buf[4];
-    size_t  bufsize;
-    int     eos;
-} b64_decode_ctx;
-
-void   b64_decode_init(b64_decode_ctx *ctx);
-int    b64_decode_eos(b64_decode_ctx* ctx);
-int    b64_decode_update_validate(const uint8_t buf[], size_t bufsize);
-size_t b64_decode_update_size(size_t bufsize);
-size_t b64_decode_update(b64_decode_ctx *ctx,
-                         uint8_t out[],
-                         const uint8_t buf[], size_t bufsize);
-size_t b64_decode_final(b64_decode_ctx *ctx,
-                        uint8_t out[]);
 #endif
