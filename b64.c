@@ -16,6 +16,16 @@
     }\
     else fprintf(stderr, "\n");\
 }
+static const char* HELP =
+    "usage: b64 -h\n"
+    "       b64 -e [-w <length>]\n"
+    "       b64 -d\n"
+    "args:\n"
+    "  -h           show help\n"
+    "  -e           encode stdin\n"
+    "  -w <length>  set line wrap length (>=0, default: 76)\n"
+    "  -d           decode stdin\n"
+    ;
 
 int encode(FILE* fp, size_t wrap);
 int decode(FILE* fp);
@@ -161,8 +171,15 @@ int main(int argc, char **argv)
     int rv = 1;
     int c;
     char action = 0;
-    while ((c = getopt(argc, argv, "edw:")) != -1)
+    while ((c = getopt(argc, argv, "hedw:")) != -1)
         switch (c) {
+        default:
+            err("invalid usage: see b64 -h");
+            goto error;
+        case 'h':
+            printf("%s", HELP);
+            rv = 0;
+            goto error;
         case 'w':
             errno = 0;
             wrap = strtol(optarg, &tmp, 10);
@@ -177,6 +194,7 @@ int main(int argc, char **argv)
     switch (action) {
         case 'e': rv = encode(stdin, wrap); break;
         case 'd': rv = decode(stdin); break;
+        default:  err("invalid usage: see b64 -h"); break;
     }
 error:
     return rv;

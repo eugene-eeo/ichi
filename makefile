@@ -4,7 +4,7 @@ endif
 CC=gcc
 CFLAGS=-Wall -O3 -march=native
 
-all: kurv luck
+all: kurv luck b64
 
 full: clean all tests
 
