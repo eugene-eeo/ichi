@@ -71,24 +71,29 @@ void ls_lock(      uint8_t *output,  // input_size + 34
                 output + 18 + 16, /* mac */
                 key, nonce,
                 input, input_size);
+    crypto_wipe(length, sizeof(length));
 }
 
 int ls_unlock_length(size_t        *to_read,
                      uint8_t        nonce [24],
                      const uint8_t  key   [32],
-                     const uint8_t  input [18]) // 16 + 2
+                     const uint8_t  input [18])
 {
+    int rv = -1;
     uint8_t length_buf[2];
     increment_nonce(nonce);
     if (crypto_unlock(length_buf,
                       key, nonce,
                       input /* mac */,
                       input + 16, 2) != 0)
-        return -1;
+        goto error;
+    rv = 0;
     // convert back to integer
     *to_read =   (size_t) length_buf[0]
              + (((size_t) length_buf[1]) << 8);
-    return 0;
+error:
+    crypto_wipe(length_buf, 2);
+    return rv;
 }
 
 int ls_unlock_payload(uint8_t        *output,
@@ -226,8 +231,9 @@ int encrypt(FILE* fp, FILE* key_fp)
     crypto_blake2b_ctx ctx;
     crypto_blake2b_general_init(&ctx, 64, shared_key, 32);
 
+    size_t n;
     for (;;) {
-        size_t n = fread(raw_buf, 1, raw_buf_size, fp);
+        n = fread(raw_buf, 1, raw_buf_size, fp);
         if (ferror(fp)) {
             err("cannot read");
             goto error_2;
@@ -254,6 +260,9 @@ error_2:
     _free(raw_buf, raw_buf_size);
     _free(enc_buf, enc_buf_size);
 error_1:
+    n = 0;
+    crypto_wipe(digest,     sizeof(digest));
+    crypto_wipe(nonce,      sizeof(nonce));
     crypto_wipe(shared_key, sizeof(shared_key));
     crypto_wipe(eph_sk,     sizeof(eph_sk));
     crypto_wipe(eph_pk,     sizeof(eph_pk));
@@ -294,6 +303,7 @@ int decrypt(FILE* fp, FILE* key_fp)
 
     uint8_t nonce[24] = { 0 };
     uint8_t digest[64];
+    size_t length; // length of each BLOCK chunk
     crypto_blake2b_ctx ctx;
     crypto_blake2b_general_init(&ctx, 64, shared_key, 32);
 
@@ -308,7 +318,6 @@ int decrypt(FILE* fp, FILE* key_fp)
                 goto error_2;
             case HEAD_BLOCK:
             {
-                size_t length = 0;
                 __check_read(  _read(fp, raw_buf, 18));
                 __check_unlock(ls_unlock_length(&length, nonce, shared_key, raw_buf));
                 __check_read(  _read(fp, raw_buf, length + 16));
@@ -343,6 +352,9 @@ error_2:
     _free(raw_buf, raw_buf_size);
     _free(dec_buf, dec_buf_size);
 error_1:
+    length = 0;
+    crypto_wipe(digest,     sizeof(digest));
+    crypto_wipe(nonce,      sizeof(nonce));
     crypto_wipe(eph_pk,     sizeof(eph_pk));
     crypto_wipe(sk,         sizeof(sk));
     crypto_wipe(shared_key, sizeof(shared_key));
