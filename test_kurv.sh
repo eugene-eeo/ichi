@@ -104,9 +104,12 @@ setup() {
     [ "$output" = "$(cat monocypher/monocypher.c)" ]
 }
 
-@test "regression: check empty stream" {
+@test "regression: empty stream" {
     kurv -g test/id
     touch test/empty
     ! kurv -ck test/id.pub test/empty 2> test/err
+    [[ "$(cat test/err)" == *"invalid stream"* ]]
+
+    ! kurv -d test/empty 2> test/err
     [[ "$(cat test/err)" == *"invalid stream"* ]]
 }

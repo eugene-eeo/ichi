@@ -406,7 +406,7 @@ int detach(FILE* fp)
                     goto error;
                 }
                 sig_buf = buf + n - total_size + start_size;
-            } else {
+            } else if (tmp_size >= (total_size - n)) {
                 if (_write(stdout, tmp, tmp_size - (total_size - n)) != 0) {
                     err("cannot write");
                     goto error;
@@ -415,6 +415,9 @@ int detach(FILE* fp)
                 memmove(buf + (total_size - n), buf, n);
                 memcpy(buf, tmp + tmp_size - (total_size - n), total_size - n);
                 sig_buf = buf + start_size;
+            } else {
+                err("invalid stream");
+                goto error;
             }
 
             if (decode_signature(sig, sig_buf) != 0) {
