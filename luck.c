@@ -51,8 +51,8 @@ static void increment_nonce(uint8_t buf[24])
         buf[i]++;
 }
 
-void ls_lock(      uint8_t *output,  // input_size + 34
-                   uint8_t  nonce [24],
+void ls_lock(uint8_t       *output,  // input_size + 34
+             uint8_t        nonce [24],
              const uint8_t  key   [32],
              const uint8_t *input, size_t input_size)
 {
@@ -92,7 +92,7 @@ int ls_unlock_length(size_t        *to_read,
     *to_read =   (size_t) length_buf[0]
              + (((size_t) length_buf[1]) << 8);
 error:
-    crypto_wipe(length_buf, 2);
+    crypto_wipe(length_buf, sizeof(length_buf));
     return rv;
 }
 
@@ -177,8 +177,8 @@ int write_pubkey(FILE* fp)
 
     crypto_key_exchange_public_key(pk, sk);
 
-    if (fwrite(pk, 1, sizeof(pk), stdout) != sizeof(pk)
-            || fwrite("\n", 1, 1, stdout) != 1) {
+    if (_write(stdout, pk, sizeof(pk)) != 0
+            || _write(stdout, (uint8_t *) "\n", 1) != 0) {
         err("cannot write");
         goto error;
     }
@@ -337,7 +337,7 @@ int decrypt(FILE* fp, FILE* key_fp)
                 // expect EOF - do one extra read here otherwise we cannot
                 // detect EOF.
                 if (fread(raw_buf, 1, 1, fp) == 1 || !feof(fp)) {
-                    err("expected to be EOF");
+                    err("expected EOF");
                     goto error_2;
                 }
                 done = 1;
