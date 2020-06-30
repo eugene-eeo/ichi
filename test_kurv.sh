@@ -25,15 +25,15 @@ setup() {
     kurv -g test/id
     kurv -g test/id2
 
-    kurv -sk test/id.priv README > test/signed.txt
+    kurv -sk test/id.priv README.md > test/signed.txt
     [ -f 'test/signed.txt' ]
 
     # shellcheck disable=SC2002
-    cat README | kurv -sk test/id.priv > test/signed.txt
+    cat README.md | kurv -sk test/id.priv > test/signed.txt
     [ -f 'test/signed.txt' ]
 
     # file w/o signature should fail
-    run kurv -ck test/id.pub README
+    run kurv -ck test/id.pub README.md
     [ "$status" -ne 0 ]
 
     # file with signature
@@ -50,7 +50,7 @@ setup() {
     kurv -g test/id
     kurv -g test/id2
 
-    kurv -sk test/id.priv README > test/f1
+    kurv -sk test/id.priv README.md > test/f1
     kurv -sk test/id2.priv test/f1 > test/f2
 
     # shellcheck disable=SC2002
@@ -62,7 +62,7 @@ setup() {
 @test "checking options" {
     # check -i and -o options are respected
     kurv -g test/id
-    kurv -sk test/id.priv README > test/output.txt
+    kurv -sk test/id.priv README.md > test/output.txt
 
     # with -i specified
     run kurv -ck test/id.pub -i test/output.txt
@@ -76,12 +76,12 @@ setup() {
     kurv -g test/keyring/c
     kurv -g test/id
 
-    kurv -sk test/id.priv README > test/u.txt
+    kurv -sk test/id.priv README.md > test/u.txt
     KURV_KEYRING="test/keyring/" run kurv -c u.txt
     [ "$status" -ne 0 ]
 
     for id in test/keyring/{a,b,c}; do
-        kurv -sk "$id.priv" README > test/output.txt
+        kurv -sk "$id.priv" README.md > test/output.txt
 
         # without KURV_KEYRING
         run kurv -c test/output.txt

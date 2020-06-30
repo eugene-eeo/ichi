@@ -22,17 +22,17 @@ setup() {
 
 @test 'encrypt + decrypt' {
     luck -g test/id
-    luck -ek test/id.pk README > test/README-enc
-    run luck -dk test/id.sk test/README-enc
+    luck -ek test/id.pk monocypher/monocypher.c > test/enc
+    run luck -dk test/id.sk test/enc
     [ "$status" = 0 ]
-    [ "$output" = "$(cat README)" ]
+    [ "$output" = "$(cat monocypher/monocypher.c)" ]
 
     # decrypt with stream cutoff
-    run luck -dk test/id.sk <(head -c 200 test/README-enc)
+    run luck -dk test/id.sk <(head -c 200 test/enc)
     [ "$status" != 0 ]
 
     # decrypt with invalid id
     luck -g test/eve
-    run luck -dk test/eve.sk test/README-enc
+    run luck -dk test/eve.sk test/enc
     [ "$status" != 0 ]
 }
