@@ -25,15 +25,15 @@ static const char* HELP =
     "usage: luck -h\n"
     "       luck -g <base>\n"
     "       luck -wk <key>\n"
-    "       luck -{e|d}k <key> [FILE]\n"
-    "\nargs:\n"
-    "  FILE       file for encryption/decryption (default: stdin).\n"
-    "\noptions:\n"
+    "       luck -{e|d}k <key> [FILE]\n\n"
+    "args:\n"
+    "  FILE       file for encryption/decryption (default: stdin).\n\n"
+    "options:\n"
     "  -h         show help\n"
     "  -g <base>  generate keypair in <key>.sk (secret) and <key>.pk (public)\n"
     "  -wk <key>  print public key for secret key <key>\n"
     "  -ek <key>  encrypt FILE for receipient with pubkey <key>\n"
-    "  -dk <key>  decrypt FILE with secret key <key>\n"
+    "  -dk <key>  decrypt FILE with secret key <key>\n\n"
     ;
 
 static const uint8_t HEAD_BLOCK  = 'b';
@@ -377,7 +377,7 @@ int main(int argc, char** argv)
         switch (c) {
         default: err("%s", SEE_HELP); goto out;
         case 'h':
-            printf("%s\n", HELP);
+            printf("%s", HELP);
             rv = 0;
             goto out;
         case 'g': action = 'g'; no_argc = 1;   base = optarg;  break;
@@ -397,7 +397,7 @@ int main(int argc, char** argv)
         err("no key specified");
         goto out;
     }
-    if (no_argc && argc - optind > 0) {
+    if (no_argc && argc > optind) {
         err("%s", SEE_HELP);
         goto out;
     }

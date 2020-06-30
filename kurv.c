@@ -124,12 +124,15 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
                 crypto_blake2b_update(&ctx, tmp, tmp_size);
                 crypto_blake2b_update(&ctx, buf, n - total_size);
                 sig_buf = buf + n - total_size + start_size;
-            } else {
+            } else if (tmp_size >= (total_size - n)) {
                 crypto_blake2b_update(&ctx, tmp, tmp_size - (total_size - n));
                 // sig is now in buf
                 memmove(buf + (total_size - n), buf, n);
                 memcpy(buf, tmp + tmp_size - (total_size - n), total_size - n);
                 sig_buf = buf + start_size;
+            } else {
+                err("invalid stream");
+                goto error;
             }
 
             if (decode_signature(sig, sig_buf) != 0) {
@@ -152,7 +155,6 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
 error:
     _free(buf, READ_SIZE);
     _free(tmp, READ_SIZE);
-    crypto_wipe((uint8_t *) &ctx, sizeof(ctx));
     return rv;
 }
 
@@ -268,7 +270,6 @@ int sign(FILE* fp, FILE* key_fp)
 
 error_2:
     _free(buf, READ_SIZE);
-    crypto_wipe((uint8_t *) &ctx, sizeof(ctx));
 error:
     crypto_wipe(sk,      32);
     crypto_wipe(digest,  64);
