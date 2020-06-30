@@ -1,33 +1,38 @@
 
+    █ █▀▀ █░█ █
+    █ █▄▄ █▀█ █
 
-  █▄▀ █░█ █▀█ █░█
-  █░█ █▄█ █▀▄ ▀▄▀
+simple set of tools for signing / encryption,
+built on Monocypher.
 
-  $ kurv_
+Signing
+-------
 
-  Tool to sign files using EdDSA (Ed25519 + Blake2b)
-  Example workflow:
+ # generate keypair
+ $ kurv -g id
+ $ cat id.{pub,priv}
+ P/Vkey2lTatqY5dHpxgxPrdSnbv4cQih+Gn7Flgs1tQ=
+ ...
 
-    1. generate a keypair:
+ # signing
+ $ kurv -sk id.priv README
+ ...
+ ----BEGIN KURV SIGNATURE----
+ bQ3Mx3Vb0tdmb1GF2f0jgLm8GJpvQhYFYe2kkrOHkno5
+ yOhnAi2Dl9Gmpt/Tx9aG4VyWTUjfdVyx7QI1xrpgCQ==
+ ----END KURV SIGNATURE----
 
-       $ kurv -g id
-       $ ls
-       file.txt id.pub id.priv
-
-    2. signing a file:
-
-       $ kurv -sk id.priv file.txt > file-signed.txt
-
-    3. check signature:
-       if a public key file is not specified, then kurv
-       searches for public keys in $KURV_KEYRING.
-
-       $ kurv -ck id.pub file-signed.txt > file-signed.txt
-       $ KURV_KEYRING='...' kurv -c file-signed.txt
+ # checking signatures
+ $ (cat signed-file | kurv -ck id.pub) && echo "ok"
+ ok
 
 
-    4. detach signature:
-       remove a signature from a file:
+Encryption
+----------
 
-       $ kurv -d file-signed.txt
+ $ luck -g id
+ $ echo "Hello World" \
+    | luck -ek id.pk \  # encrypt for recepient
+    | luck -dk id.sk    # decrypt
+ Hello World
 
