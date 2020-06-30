@@ -28,7 +28,6 @@ $ (cat signed-file | kurv -ck id.pub) && echo "ok"
 ok
 ```
 
-
 Encryption
 ----------
 
@@ -39,4 +38,3 @@ $ echo "Hello World" \
    | luck -dk id.sk    # decrypt
 Hello World
 ```
-

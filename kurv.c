@@ -49,6 +49,9 @@ static const char HELP[] =
 
 static const char SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
 static const char SIG_END[]   = "\n----END KURV SIGNATURE----\n";
+#define START_SIZE (strlen(SIG_START))
+#define END_SIZE   (strlen(SIG_END))
+#define TOTAL_SIZE (START_SIZE + B64_SIG_SIZE + 1 + END_SIZE)
 
 int generate_keypair(char* base);
 int sign(FILE* fp, FILE* key_fp);
@@ -72,6 +75,16 @@ int decode_signature(uint8_t* sig, const uint8_t* b64_sig_buf) {
     }
     crypto_wipe(b64_sig, B64_SIG_SIZE);
     return rv;
+}
+
+// check that buf is valid
+int decode_armoured_signature(uint8_t* sig, uint8_t* buf) {
+    if (memcmp(buf, SIG_START, START_SIZE) == 0
+            && decode_signature(sig, buf + START_SIZE) == 0
+            && memcmp(buf + START_SIZE + B64_SIG_SIZE + 1, SIG_END, END_SIZE) == 0) {
+        return 0;
+    }
+    return 1;
 }
 
 int key_from_file(FILE* fp, uint8_t key[32])
@@ -99,15 +112,9 @@ int str_endswith(char* str, char* suffix)
 int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
 {
     int rv = 1;
-    size_t start_size = strlen(SIG_START),
-           sig_size   = B64_SIG_SIZE + 1,
-           end_size   = strlen(SIG_END),
-           total_size = start_size + sig_size + end_size;
-
-    size_t tmp_size = 0;
-    uint8_t *buf = malloc(READ_SIZE),
-            *tmp = malloc(READ_SIZE);
-    if (buf == NULL || tmp == NULL) {
+    size_t size = 0;
+    uint8_t *buf = malloc(2 * READ_SIZE);
+    if (buf == NULL) {
         err("malloc");
         goto error;
     }
@@ -116,45 +123,35 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
     crypto_blake2b_init(&ctx);
 
     for (;;) {
-        size_t n = fread(buf, 1, READ_SIZE, fp);
-        // find signature
-        if (feof(fp)) {
-            uint8_t *sig_buf;
-            if (n >= total_size) {
-                crypto_blake2b_update(&ctx, tmp, tmp_size);
-                crypto_blake2b_update(&ctx, buf, n - total_size);
-                sig_buf = buf + n - total_size + start_size;
-            } else if (tmp_size >= (total_size - n)) {
-                crypto_blake2b_update(&ctx, tmp, tmp_size - (total_size - n));
-                // sig is now in buf
-                memmove(buf + (total_size - n), buf, n);
-                memcpy(buf, tmp + tmp_size - (total_size - n), total_size - n);
-                sig_buf = buf + start_size;
-            } else {
-                err("invalid stream");
-                goto error;
-            }
-
-            if (decode_signature(sig, sig_buf) != 0) {
-                err("malformed signature");
-                goto error;
-            }
-            crypto_blake2b_final(&ctx, digest);
-            rv = 0;
-            break;
-        }
+        size_t n = fread(buf + size, 1, READ_SIZE, fp);
+        size += n;
         if (ferror(fp)) {
             err("cannot read");
             goto error;
         }
-        crypto_blake2b_update(&ctx, tmp, tmp_size);
-        memcpy(tmp, buf, n);
-        tmp_size = n;
+        if (feof(fp)) {
+            // try to find signature in buf
+            if (size < TOTAL_SIZE) {
+                err("invalid stream");
+                goto error;
+            }
+            if (decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0) {
+                err("malformed signature");
+                goto error;
+            }
+            crypto_blake2b_update(&ctx, buf, size - TOTAL_SIZE);
+            crypto_blake2b_final(&ctx, digest);
+            return 0;
+        }
+        if (size > READ_SIZE) {
+            crypto_blake2b_update(&ctx, buf, size - READ_SIZE);
+            memmove(buf, buf + READ_SIZE, READ_SIZE);
+            size -= READ_SIZE;
+        }
     }
 
 error:
-    _free(buf, READ_SIZE);
-    _free(tmp, READ_SIZE);
+    _free(buf, 2*READ_SIZE);
     return rv;
 }
 
@@ -377,71 +374,40 @@ error:
     return rv;
 }
 
+#define __check(x, msg) { if (x) { err(msg); goto error; } }
+
 int detach(FILE* fp)
 {
     int rv = 1;
-    size_t start_size = strlen(SIG_START),
-           sig_size   = 88 + 1,
-           end_size   = strlen(SIG_END),
-           total_size = start_size + sig_size + end_size;
-
     uint8_t sig [64];
-    size_t tmp_size = 0;
-    uint8_t *buf = malloc(READ_SIZE),
-            *tmp = malloc(READ_SIZE);
-    if (buf == NULL || tmp == NULL) {
+    size_t size = 0;
+    uint8_t *buf = malloc(2 * READ_SIZE);
+    if (buf == NULL) {
         err("malloc");
         goto error;
     }
 
     for (;;) {
-        size_t n = fread(buf, 1, READ_SIZE, fp);
-        // find signature
+        size_t n = fread(buf + size, 1, READ_SIZE, fp);
+        size += n;
+        __check(ferror(fp), "cannot read");
         if (feof(fp)) {
-            uint8_t *sig_buf;
-            if (n >= total_size) {
-                if (_write(stdout, tmp, tmp_size) != 0
-                        || _write(stdout, buf, n - total_size) != 0) {
-                    err("cannot write");
-                    goto error;
-                }
-                sig_buf = buf + n - total_size + start_size;
-            } else if (tmp_size >= (total_size - n)) {
-                if (_write(stdout, tmp, tmp_size - (total_size - n)) != 0) {
-                    err("cannot write");
-                    goto error;
-                }
-                // sig is now in buf
-                memmove(buf + (total_size - n), buf, n);
-                memcpy(buf, tmp + tmp_size - (total_size - n), total_size - n);
-                sig_buf = buf + start_size;
-            } else {
-                err("invalid stream");
-                goto error;
-            }
-
-            if (decode_signature(sig, sig_buf) != 0) {
-                err("malformed signature");
-                goto error;
-            }
+            // try to find signature in buf
+            __check(size < TOTAL_SIZE, "invalid stream");
+            __check(decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0, "malformed signature");
+            __check(_write(stdout, buf, size - TOTAL_SIZE) != 0, "cannot write to stdout");
             rv = 0;
             break;
         }
-        if (ferror(fp)) {
-            err("cannot read");
-            goto error;
+        if (size > READ_SIZE) {
+            __check(_write(stdout, buf, size - READ_SIZE) != 0, "cannot write to stdout");
+            memcpy(buf, buf + READ_SIZE, READ_SIZE);
+            size -= READ_SIZE;
         }
-        if (_write(stdout, tmp, tmp_size) != 0) {
-            err("cannot write");
-            goto error;
-        }
-        memcpy(tmp, buf, n);
-        tmp_size = n;
     }
 
 error:
-    _free(buf, READ_SIZE);
-    _free(tmp, READ_SIZE);
+    _free(buf, 2 * READ_SIZE);
     crypto_wipe(sig, 64);
     return rv;
 }
