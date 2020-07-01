@@ -148,7 +148,7 @@ int decode(FILE* fp)
 
         if (feof(fp)) {
             b64_decode_final(&ctx);
-            if (b64_decode_err(&ctx) || !b64_decode_eos(&ctx)) {
+            if (b64_decode_err(&ctx)) {
                 err("invalid base64");
                 goto error;
             }

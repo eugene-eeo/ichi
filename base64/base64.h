@@ -43,6 +43,5 @@ size_t b64_decode_update(b64_decode_ctx *ctx,
                          uint8_t *out,
                          const uint8_t *buf, size_t bufsize);
 void   b64_decode_final(b64_decode_ctx *ctx);
-int    b64_decode_eos(b64_decode_ctx *ctx);
 int    b64_decode_err(b64_decode_ctx *ctx);
 #endif

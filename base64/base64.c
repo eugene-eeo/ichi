@@ -61,22 +61,21 @@ int b64_isvalidchar(char c)
     if ((c >= '0' && c <= '9')
             || (c >= 'A' && c <= 'Z')
             || (c >= 'a' && c <= 'z')
-            || (c == '+' || c == '/' || c == '='))
+            || c == '+' || c == '/' || c == '=')
         return 1;
     return 0;
 }
 
 int b64_validate(const uint8_t input[], const size_t input_size) {
     // Validate that input is valid
-    if (input_size % 4 != 0) {
+    if (input_size % 4 != 0)
         return -1;
-    }
     for (size_t i = 0; i < input_size; i++) {
         if (!b64_isvalidchar(input[i]))
             return -1;
         if (input[i] == '=') {
-            if (i == input_size - 1) continue;
-            if (i == input_size - 2 && input[i+1] == '=') continue;
+            if (i == input_size - 1) return 0;
+            if (i == input_size - 2 && input[i+1] == '=') return 0;
             return -1;
         }
     }
@@ -195,5 +194,4 @@ void b64_decode_final(b64_decode_ctx *ctx)
     ctx->bufsize = 0;
 }
 
-int b64_decode_eos(b64_decode_ctx *ctx) { return (int)ctx->eos; }
 int b64_decode_err(b64_decode_ctx *ctx) { return (int)ctx->err; }
