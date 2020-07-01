@@ -159,31 +159,25 @@ size_t b64_decode_update(b64_decode_ctx *ctx,
                          uint8_t *out,
                          const uint8_t *buf, size_t bufsize)
 {
-    if (ctx->eos) {
-        ctx->err = 1;
-        return 0;
-    }
     size_t i = 0, // where in buf
            j = 0; // where in out
-    for (; i < bufsize && !ctx->eos; ) {
+    while (i < bufsize && !ctx->eos && !ctx->err) {
         for (; (ctx->bufsize < 4) && (i < bufsize); i++, ctx->bufsize++)
             ctx->buf[ctx->bufsize] = buf[i];
         if (ctx->bufsize < 4)
-            return j;
+            break;
         // consume buf
         ctx->bufsize = 0;
         ctx->err = b64_validate(ctx->buf, 4) != 0;
         if (ctx->err)
-            return 0;
+            break;
         b64_decode(out + j, ctx->buf, 4);
         j += 3;
         if (ctx->buf[2] == '=') { ctx->eos = 1; j--; }
         if (ctx->buf[3] == '=') { ctx->eos = 1; j--; }
     }
-    if (ctx->eos && i != bufsize) {
+    if (ctx->eos && i != bufsize)
         ctx->err = 1;
-        return 0;
-    }
     return j;
 }
 
