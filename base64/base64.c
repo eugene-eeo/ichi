@@ -183,7 +183,7 @@ size_t b64_decode_update(b64_decode_ctx *ctx,
 
 void b64_decode_final(b64_decode_ctx *ctx)
 {
-    ctx->err = ctx->bufsize != 0;
+    ctx->err = ctx->err || ctx->bufsize != 0;
     ctx->eos = 1;
     ctx->bufsize = 0;
 }
