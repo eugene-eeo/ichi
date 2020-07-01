@@ -75,8 +75,8 @@ int b64_validate(const uint8_t input[], const size_t input_size) {
         if (!b64_isvalidchar(input[i]))
             return -1;
         if (input[i] == '=') {
-            if (i == input_size - 1 ||
-                    (i == input_size - 2 && input[i+1] == '=')) continue;
+            if (i == input_size - 1) continue;
+            if (i == input_size - 2 && input[i+1] == '=') continue;
             return -1;
         }
     }
