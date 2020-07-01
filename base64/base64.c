@@ -71,10 +71,15 @@ int b64_validate(const uint8_t input[], const size_t input_size) {
     if (input_size % 4 != 0) {
         return -1;
     }
-    for (size_t i = 0; i < input_size; i++)
-        if (!b64_isvalidchar(input[i])
-                || (input[i] == '=' && i != input_size - 1 && i != input_size - 2))
+    for (size_t i = 0; i < input_size; i++) {
+        if (!b64_isvalidchar(input[i]))
             return -1;
+        if (input[i] == '=') {
+            if (i == input_size - 1 ||
+                    (i == input_size - 2 && input[i+1] == '=')) continue;
+            return -1;
+        }
+    }
     return 0;
 }
 
