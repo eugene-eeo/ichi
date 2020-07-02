@@ -104,6 +104,13 @@ setup() {
     [ "$output" = "$(cat monocypher/monocypher.c)" ]
 }
 
+@test "print public key" {
+    kurv -g test/id
+    run kurv -wk test/id.priv
+    [ "$status" = 0 ]
+    [ "$output" = "$(cat test/id.pub)" ]
+}
+
 @test "regression: empty stream" {
     kurv -g test/id
     touch test/empty

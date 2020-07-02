@@ -31,6 +31,7 @@ static const char HELP[] =
     "usage: kurv -h\n"
     "       kurv -g <base>\n"
     "       kurv -d [FILE]\n"
+    "       kurv -w -k <key>\n"
     "       kurv -s -k <key> [FILE]\n"
     "       kurv -c [-k <key>] [-i] [FILE]\n"
     "\nargs:\n"
@@ -40,6 +41,7 @@ static const char HELP[] =
     "  -g <base>   generate keypair in <base>.priv and <base>.pub.\n"
     "  -d          print FILE contents without signature.\n"
     "  -k <key>    specify key file for signing / checking.\n"
+    "  -w          print pubkey of private key in <key>.\n"
     "  -s          sign FILE using given private key <key>.\n"
     "  -c          check FILE using public key <key>.\n"
     "              if <key> is not specified, try '$KURV_KEYRING/*.pub'\n"
@@ -54,6 +56,7 @@ static const char SIG_END[]   = "\n----END KURV SIGNATURE----\n";
 #define TOTAL_SIZE (START_SIZE + B64_SIG_SIZE + 1 + END_SIZE)
 
 int generate_keypair(char* base);
+int write_pubkey(FILE* key_fp);
 int sign(FILE* fp, FILE* key_fp);
 int check(FILE* fp, FILE* key_fp, int show_id, char* id);
 int check_keyring(FILE* fp, int show_id);
@@ -111,13 +114,12 @@ int str_endswith(char* str, char* suffix)
 
 int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
 {
+#define __check(x, m) { if (x) { err(m); goto error; } }
+
     int rv = 1;
     size_t size = 0;
     uint8_t *buf = malloc(2 * READ_SIZE);
-    if (buf == NULL) {
-        err("malloc");
-        goto error;
-    }
+    __check(buf == NULL, "malloc");
 
     crypto_blake2b_ctx ctx;
     crypto_blake2b_init(&ctx);
@@ -125,20 +127,11 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
     for (;;) {
         size_t n = fread(buf + size, 1, READ_SIZE, fp);
         size += n;
-        if (ferror(fp)) {
-            err("cannot read");
-            goto error;
-        }
+        __check(ferror(fp), "cannot read");
         if (feof(fp)) {
             // try to find signature in buf
-            if (size < TOTAL_SIZE) {
-                err("invalid stream");
-                goto error;
-            }
-            if (decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0) {
-                err("malformed signature");
-                goto error;
-            }
+            __check(size < TOTAL_SIZE, "invalid stream");
+            __check(decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0, "malformed signature");
             crypto_blake2b_update(&ctx, buf, size - TOTAL_SIZE);
             crypto_blake2b_final(&ctx, digest);
             return 0;
@@ -153,6 +146,8 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
 error:
     _free(buf, 2*READ_SIZE);
     return rv;
+
+#undef __check
 }
 
 int generate_keypair(char* base)
@@ -212,6 +207,35 @@ error:
     crypto_wipe(b64_pk, B64_KEY_SIZE);
     crypto_wipe(sk, 32);
     crypto_wipe(pk, 32);
+    return rv;
+}
+
+int write_pubkey(FILE* key_fp)
+{
+    int rv = 1;
+    uint8_t sk     [32],
+            pk     [32],
+            b64_pk [B64_KEY_SIZE];
+
+    if (key_from_file(key_fp, sk) != 0) {
+        err("invalid private key");
+        goto error;
+    }
+
+    crypto_sign_public_key(pk, sk);
+    b64_encode(b64_pk, pk, 32);
+
+    if (_write(stdout, b64_pk, B64_KEY_SIZE) != 0
+            || _write(stdout, (uint8_t *) "\n", 1) != 0) {
+        err("cannot write");
+        goto error;
+    }
+    rv = 0;
+
+error:
+    crypto_wipe(sk, 32);
+    crypto_wipe(pk, 32);
+    crypto_wipe(b64_pk, B64_KEY_SIZE);
     return rv;
 }
 
@@ -374,18 +398,15 @@ error:
     return rv;
 }
 
-#define __check(x, msg) { if (x) { err(msg); goto error; } }
-
 int detach(FILE* fp)
 {
+#define __check(x, msg) { if (x) { err(msg); goto error; } }
+
     int rv = 1;
     uint8_t sig [64];
     size_t size = 0;
     uint8_t *buf = malloc(2 * READ_SIZE);
-    if (buf == NULL) {
-        err("malloc");
-        goto error;
-    }
+    __check(buf == NULL, "malloc");
 
     for (;;) {
         size_t n = fread(buf + size, 1, READ_SIZE, fp);
@@ -410,6 +431,8 @@ error:
     _free(buf, 2 * READ_SIZE);
     crypto_wipe(sig, 64);
     return rv;
+
+#undef __check
 }
 
 int main(int argc, char** argv)
@@ -424,7 +447,7 @@ int main(int argc, char** argv)
     int action = 0;
     int rv = 1;
     int c;
-    while ((c = getopt(argc, argv, "hg:sck:di")) != -1)
+    while ((c = getopt(argc, argv, "hg:wsck:di")) != -1)
         switch (c) {
         default: err("invalid usage. see kurv -h"); goto error;
         case 'h':
@@ -441,6 +464,7 @@ int main(int argc, char** argv)
             break;
         case 'i': check_show_id = 1; break;
         case 'g': action = 'g'; base = optarg; break;
+        case 'w': action = 'w'; expect_key = 1; break;
         case 's': action = 's'; expect_fp = 1; expect_key = 1; break;
         case 'c': action = 'c'; expect_fp = 1; break;
         case 'd': action = 'd'; expect_fp = 1; break;
@@ -448,6 +472,10 @@ int main(int argc, char** argv)
 
     if (expect_key && key_fp == NULL) {
         err("no key specified.");
+        goto error;
+    }
+    if (!expect_fp && argc > optind) {
+        err("invalid usage. see kurv -h");
         goto error;
     }
     if (expect_fp) {
@@ -472,6 +500,7 @@ int main(int argc, char** argv)
               ? check_keyring(fp, check_show_id)
               : check(fp, key_fp, check_show_id, key_fn); break;
     case 'd': rv = detach(fp); break;
+    case 'w': rv = write_pubkey(key_fp); break;
     }
 
 error:

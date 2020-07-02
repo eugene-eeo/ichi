@@ -334,7 +334,7 @@ int decrypt(FILE* fp, FILE* key_fp)
             case HEAD_DIGEST:
             {
                 crypto_blake2b_final(&ctx, digest);
-                __check_read(  _read(fp, raw_buf, 64));
+                __check_read(_read(fp, raw_buf, 64));
                 if (crypto_verify64(digest, raw_buf) != 0) {
                     err("bad encryption");
                     goto error_2;

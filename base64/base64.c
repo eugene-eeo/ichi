@@ -150,9 +150,7 @@ void b64_decode_init(b64_decode_ctx *ctx)
 
 size_t b64_decode_update_size(size_t input_size)
 {
-    // conservative estimate...
-    size_t ret = input_size / 4 * 3;
-    return ret + 3;
+    return input_size / 4 * 3 + 3;  // conservative estimate
 }
 
 size_t b64_decode_update(b64_decode_ctx *ctx,
