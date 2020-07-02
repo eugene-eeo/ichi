@@ -33,9 +33,9 @@ static const char* HELP =
     "  -g <base>  generate keypair in <key>.sk (secret) and <key>.pk (public)\n"
     "  -wk <key>  print public key for secret key <key>\n"
     "  -ek <key>  encrypt FILE for receipient with pubkey <key>\n"
-    "  -dk <key>  decrypt FILE with secret key <key>\n\n"
-    ;
+    "  -dk <key>  decrypt FILE with secret key <key>\n\n";
 
+static const uint8_t HEAD_PUBKEY = '@';
 static const uint8_t HEAD_BLOCK  = 'b';
 static const uint8_t HEAD_DIGEST = '$';
 
@@ -43,7 +43,6 @@ int generate_keypair(char *base);
 int write_pubkey(FILE *key_fp);
 int encrypt(FILE *fp, FILE *key_fp);
 int decrypt(FILE *fp, FILE *key_fp);
-
 
 static void increment_nonce(uint8_t buf[24])
 {
@@ -190,11 +189,11 @@ error:
     return rv;
 }
 
-#define __check_write(x) { if ((x) != 0) { err("cannot write"); goto error_2; } }
-
 // Encrypt data for key_fp
 int encrypt(FILE* fp, FILE* key_fp)
 {
+#define __check_write(x) { if ((x) != 0) { err("cannot write"); goto error_2; } }
+
     int rv = 1;
     uint8_t eph_sk     [32],
             eph_pk     [32],
@@ -225,6 +224,7 @@ int encrypt(FILE* fp, FILE* key_fp)
     }
 
     uint8_t nonce[24] = { 0 };
+    __check_write(_write(stdout, &HEAD_PUBKEY, 1));
     __check_write(_write(stdout, eph_pk, sizeof(eph_pk)));
 
     uint8_t digest[64];
@@ -268,13 +268,16 @@ error_1:
     crypto_wipe(eph_pk,     sizeof(eph_pk));
     crypto_wipe(pk,         sizeof(pk));
     return rv;
-}
 
-#define __check_read(x)   { if ((x) != 0) { err("bad encryption: cannot read");   goto error_2; } }
-#define __check_unlock(x) { if ((x) != 0) { err("bad encryption: cannot unlock"); goto error_2; } }
+#undef __check_write
+}
 
 int decrypt(FILE* fp, FILE* key_fp)
 {
+#define __check_write(x)  { if ((x) != 0) { err("cannot write"); goto error_2; } }
+#define __check_read(x)   { if ((x) != 0) { err("bad encryption: cannot read");   goto error_2; } }
+#define __check_unlock(x) { if ((x) != 0) { err("bad encryption: cannot unlock"); goto error_2; } }
+
     int rv = 1;
     uint8_t eph_pk     [32],
             sk         [32],
@@ -284,13 +287,6 @@ int decrypt(FILE* fp, FILE* key_fp)
         err("invalid secret key");
         goto error_1;
     }
-
-    if (_read(fp, eph_pk, 32) != 0) {
-        err("invalid encryption");
-        goto error_1;
-    }
-
-    crypto_key_exchange(shared_key, sk, eph_pk);
 
     size_t raw_buf_size = 4096 + 34,
            dec_buf_size = 4096;
@@ -306,6 +302,15 @@ int decrypt(FILE* fp, FILE* key_fp)
     uint8_t head;
     size_t length; // length of each BLOCK chunk
     crypto_blake2b_ctx ctx;
+
+    if (_read(fp, &head, 1) != 0
+            || head != HEAD_PUBKEY
+            || _read(fp, eph_pk, 32) != 0) {
+        err("invalid encryption");
+        goto error_2;
+    }
+
+    crypto_key_exchange(shared_key, sk, eph_pk);
     crypto_blake2b_general_init(&ctx, 64, shared_key, 32);
 
     int done = 0;
@@ -322,10 +327,7 @@ int decrypt(FILE* fp, FILE* key_fp)
                 __check_unlock(ls_unlock_length(&length, nonce, shared_key, raw_buf));
                 __check_read(  _read(fp, raw_buf, length + 16));
                 __check_unlock(ls_unlock_payload(dec_buf, nonce, shared_key, raw_buf, length));
-                if (_write(stdout, dec_buf, length) != 0) {
-                    err("cannot write");
-                    goto error_2;
-                }
+                __check_write( _write(stdout, dec_buf, length));
                 crypto_blake2b_update(&ctx, dec_buf, length);
                 break;
             }
@@ -333,7 +335,10 @@ int decrypt(FILE* fp, FILE* key_fp)
             {
                 crypto_blake2b_final(&ctx, digest);
                 __check_read(  _read(fp, raw_buf, 64));
-                __check_unlock(crypto_verify64(digest, raw_buf));
+                if (crypto_verify64(digest, raw_buf) != 0) {
+                    err("bad encryption");
+                    goto error_2;
+                }
                 // expect EOF - do one extra read here otherwise we cannot
                 // detect EOF.
                 if (fread(raw_buf, 1, 1, fp) == 1 || !feof(fp)) {
@@ -359,6 +364,10 @@ error_1:
     crypto_wipe(sk,         sizeof(sk));
     crypto_wipe(shared_key, sizeof(shared_key));
     return rv;
+
+#undef __check_write
+#undef __check_read
+#undef __check_unlock
 }
 
 int main(int argc, char** argv)

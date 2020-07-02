@@ -170,7 +170,7 @@ int main(int argc, char **argv)
     char *tmp;
     int rv = 1;
     int c;
-    char action = 0;
+    char action = 'e';
     while ((c = getopt(argc, argv, "hedw:")) != -1)
         switch (c) {
         default:
@@ -194,7 +194,6 @@ int main(int argc, char **argv)
     switch (action) {
         case 'e': rv = encode(stdin, wrap); break;
         case 'd': rv = decode(stdin); break;
-        default:  err("invalid usage: see b64 -h"); break;
     }
 error:
     return rv;
