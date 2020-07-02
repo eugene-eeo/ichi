@@ -237,8 +237,8 @@ error:
 
 int _encrypt(FILE* fp, uint8_t *key)
 {
-#define __check_write(x) { if ((x) != 0) __error("cannot write"); }
 #define __error(m)       { err(m); goto error; }
+#define __check_write(x) { if ((x) != 0) __error("cannot write"); }
 
     int rv = 1;
     size_t raw_buf_size = 4096,
