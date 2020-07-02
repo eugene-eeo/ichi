@@ -33,8 +33,12 @@ Encryption
 
 ```sh
 $ luck -g id
-$ echo "Hello World" \
+$ echo "Hello" \
    | luck -ek id.pk \  # encrypt for recepient
    | luck -dk id.sk    # decrypt
-Hello World
+Hello
+$ echo "World" \
+   | luck -ep "password" \ # with password
+   | luck -dp "password"
+World
 ```
