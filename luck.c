@@ -100,8 +100,8 @@ int ls_unlock_length(size_t        *to_read,
         goto error;
     rv = 0;
     // convert back to integer
-    *to_read =   (size_t) length_buf[0]
-             + (((size_t) length_buf[1]) << 8);
+    *to_read = (size_t) length_buf[0]
+             | (size_t) length_buf[1] << 8;
 error:
     crypto_wipe(length_buf, sizeof(length_buf));
     return rv;
@@ -140,12 +140,12 @@ void pdkf_decode_params(uint8_t* buf,
                         size_t* nb_blocks, size_t* nb_iterations,
                         size_t* salt_size)
 {
-    *nb_blocks     =  (size_t) buf[0];
-    *nb_blocks    += ((size_t) buf[1]) << 8;
-    *nb_blocks    += ((size_t) buf[2]) << 16;
-    *nb_blocks    += ((size_t) buf[3]) << 24;
-    *nb_iterations =  (size_t) buf[4];
-    *salt_size     =  (size_t) buf[5];
+    *nb_blocks = (size_t) buf[0]
+               | (size_t) buf[1] << 8
+               | (size_t) buf[2] << 16
+               | (size_t) buf[3] << 24;
+    *nb_iterations = (size_t) buf[4];
+    *salt_size     = (size_t) buf[5];
 }
 
 int pdkf_key(uint8_t *key,
