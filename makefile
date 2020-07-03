@@ -12,22 +12,23 @@ full: clean all tests
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 kurv: kurv.o base64/base64.o monocypher/monocypher.o utils.o
-	$(CC) -o kurv $^
+	$(CC) -o $@ $^
 
 luck: luck.o monocypher/monocypher.o utils.o
-	$(CC) -o luck $^
+	$(CC) -o $@ $^
 
 b64: b64.o utils.o monocypher/monocypher.o base64/base64.o
-	$(CC) -o b64 $^
+	$(CC) -o $@ $^
 
 clean:
 	-rm kurv luck b64
 	-rm *.o */*.o
 	-rm -rf test
 
-tests: kurv luck
+tests: kurv luck b64
 	bats test_kurv.sh
 	bats test_luck.sh
+	bats test_b64.sh
 
 install: kurv luck
 	install -d $(DESTDIR)$(PREFIX)/bin/

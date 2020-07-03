@@ -18,11 +18,11 @@
 }
 static const char* HELP =
     "usage: b64 -h\n"
-    "       b64 -e [-w <length>]\n"
+    "       b64 [-e] [-w <length>]\n"
     "       b64 -d\n"
     "args:\n"
     "  -h           show help\n"
-    "  -e           encode stdin\n"
+    "  -e           encode (default) stdin\n"
     "  -w <length>  set line wrap length (>=0, default: 76)\n"
     "  -d           decode stdin\n"
     ;
@@ -106,7 +106,7 @@ int encode(FILE* fp, size_t wrap)
 error:
     crypto_wipe(ctx.buf, sizeof(ctx.buf));
     if (buf != NULL) _free(buf, bufsize);
-    if (enc != NULL) _free(enc, encsize); 
+    if (enc != NULL) _free(enc, encsize);
     return rv;
 }
 
