@@ -69,13 +69,15 @@ uint8_t *unwraplines(      uint8_t *head,
 
 int encode(FILE* fp, size_t wrap)
 {
+#define __error(m) { err(m); goto error; }
+
     int rv = 1;
     size_t bufsize = 1024,
            encsize = b64_encode_update_size(bufsize);
     uint8_t *buf = malloc(1024),
             *enc = malloc(encsize);
     if (buf == NULL || enc == NULL)
-        goto error;
+        __error("malloc");
 
     size_t so_far = 0; // state for wraplines
     b64_encode_ctx ctx;
@@ -83,21 +85,15 @@ int encode(FILE* fp, size_t wrap)
 
     for (;;) {
         size_t n = fread(buf, 1, bufsize, fp);
-        if (ferror(fp)) {
-            err("cannot read");
-            goto error;
-        }
+        if (ferror(fp))
+            __error("fread");
         size_t m = b64_encode_update(&ctx, enc, buf, n);
-        if (wraplines(&so_far, wrap, enc, m, 0) != 0) {
-            err("cannot write");
-            goto error;
-        }
+        if (wraplines(&so_far, wrap, enc, m, 0) != 0)
+            __error("fwrite");
         if (feof(fp)) {
             m = b64_encode_final(&ctx, enc);
-            if (wraplines(&so_far, wrap, enc, m, 1) != 0) {
-                err("cannot write");
-                goto error;
-            }
+            if (wraplines(&so_far, wrap, enc, m, 1) != 0)
+                __error("fwrite");
             break;
         }
     }
@@ -105,53 +101,48 @@ int encode(FILE* fp, size_t wrap)
     rv = 0;
 error:
     crypto_wipe(ctx.buf, sizeof(ctx.buf));
-    if (buf != NULL) _free(buf, bufsize);
-    if (enc != NULL) _free(enc, encsize);
+    _free(buf, bufsize);
+    _free(enc, encsize);
     return rv;
+
+#undef __error
 }
 
 int decode(FILE* fp)
 {
-    int rv = 1;
+#define __error(m) { err(m); goto error; }
 
+    int rv = 1;
     size_t bufsize = 1024,
            decsize = b64_decode_update_size(bufsize);
     uint8_t *buf = malloc(1024),
             *dec = malloc(decsize);
     if (buf == NULL || dec == NULL)
-        goto error;
+        __error("malloc");
 
     b64_decode_ctx ctx;
     b64_decode_init(&ctx);
 
     for (;;) {
         size_t n = fread(buf, 1, bufsize, fp);
-        if (ferror(fp)) {
-            err("cannot read");
-            goto error;
-        }
+        if (ferror(fp))
+            __error("fread");
 
         uint8_t *head = buf;
         uint8_t *tail;
         while ((tail = unwraplines(head, buf, n)) != NULL) {
             size_t m = b64_decode_update(&ctx, dec, head, tail - head);
-            if (b64_decode_err(&ctx)) {
-                err("invalid base64");
-                goto error;
-            }
-            if (_write(stdout, dec, m) != 0) {
-                err("cannot write");
-                goto error;
-            }
+            if (b64_decode_err(&ctx))
+                __error("invalid base64");
+            if (_write(stdout, dec, m) != 0)
+                __error("fwrite");
             head = tail + 1;
         }
 
         if (feof(fp)) {
             b64_decode_final(&ctx);
-            if (b64_decode_err(&ctx)) {
-                err("invalid base64");
-                goto error;
-            }
+            if (b64_decode_err(&ctx))
+                __error("invalid base64");
             break;
         }
     }
@@ -159,9 +150,11 @@ int decode(FILE* fp)
     rv = 0;
 error:
     crypto_wipe(ctx.buf, sizeof(ctx.buf));
-    if (buf != NULL) _free(buf, bufsize);
-    if (dec != NULL) _free(dec, decsize);
+    _free(buf, bufsize);
+    _free(dec, decsize);
     return rv;
+
+#undef __error
 }
 
 int main(int argc, char **argv)
