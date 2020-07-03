@@ -166,23 +166,23 @@ int main(int argc, char **argv)
     char action = 'e';
     while ((c = getopt(argc, argv, "hedw:")) != -1)
         switch (c) {
-        default:
-            err("invalid usage: see b64 -h");
-            goto error;
-        case 'h':
-            printf("%s", HELP);
-            rv = 0;
-            goto error;
-        case 'w':
-            errno = 0;
-            wrap = strtol(optarg, &tmp, 10);
-            if (errno || tmp == optarg) {
-                err("invalid argument to -w");
+            default:
+                err("invalid usage: see b64 -h");
                 goto error;
-            }
-            break;
-        case 'e': action = 'e'; break;
-        case 'd': action = 'd'; break;
+            case 'h':
+                printf("%s", HELP);
+                rv = 0;
+                goto error;
+            case 'w':
+                errno = 0;
+                wrap = strtol(optarg, &tmp, 10);
+                if (errno || tmp == optarg) {
+                    err("invalid argument to -w");
+                    goto error;
+                }
+                break;
+            case 'e': action = 'e'; break;
+            case 'd': action = 'd'; break;
         }
     switch (action) {
         case 'e': rv = encode(stdin, wrap); break;
