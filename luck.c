@@ -24,16 +24,24 @@ static const char* SEE_HELP = "invalid usage: see luck -h";
 static const char* HELP =
     "usage: luck -h\n"
     "       luck -g <base>\n"
-    "       luck -wk <key>\n"
-    "       luck -{e|d}k <key> [FILE]\n\n"
-    "args:\n"
-    "  FILE       file for encryption/decryption (default: stdin).\n\n"
+    "       luck -w -k <key>\n"
+    "       luck {-e|-d} {-k <key> | -p <password>} [FILE]\n\n"
+    "FILE defaults to stdin if no FILE is specified.\n\n"
     "options:\n"
-    "  -h         show help\n"
-    "  -g <base>  generate keypair in <key>.sk (secret) and <key>.pk (public)\n"
-    "  -wk <key>  print public key for secret key <key>\n"
-    "  -ek <key>  encrypt FILE for receipient with pubkey <key>\n"
-    "  -dk <key>  decrypt FILE with secret key <key>\n\n";
+    "  -h         show help.\n"
+    "  -g <base>  generate keypair in <key>.sk (secret) and <key>.pk (public).\n"
+    "  -k <key>   specify secret/public key file <key>.\n"
+    "  -w         print public key for secret key <key>.\n"
+    "  -e         encrypt FILE, using key-exchange or password mode.\n"
+    "  -d         decrypt FILE, similar to -e.\n"
+    "  -p <password>\n"
+    "             specify password.\n"
+    "examples:\n"
+    "  -ek id.pk  encrypts the stream, can only be opened by 'id.sk'.\n"
+    "  -dk id.sk  decrypts the above.\n"
+    "  -ep 'pwd'  encrypts the stream, opened by knowing password 'pwd'.\n"
+    "  -dp 'pwd'  decrypts the above.\n\n"
+    ;
 
 static const uint8_t HEAD_PUBKEY = '@';
 static const uint8_t HEAD_PDKF   = '#';
@@ -122,7 +130,7 @@ void pdkf_encode_params(uint8_t* out,
     out[0] = (nb_blocks)       & 0xFF;
     out[1] = (nb_blocks >> 8)  & 0xFF;
     out[2] = (nb_blocks >> 16) & 0xFF;
-    out[3] = (nb_blocks >> 32) & 0xFF;
+    out[3] = (nb_blocks >> 24) & 0xFF;
     out[4] = (nb_iterations)   & 0xFF;
     out[5] = (salt_size)       & 0xFF;
     memcpy(out + 6, salt, salt_size);
@@ -135,7 +143,7 @@ void pdkf_decode_params(uint8_t* buf,
     *nb_blocks     =  (size_t) buf[0];
     *nb_blocks    += ((size_t) buf[1]) << 8;
     *nb_blocks    += ((size_t) buf[2]) << 16;
-    *nb_blocks    += ((size_t) buf[3]) << 32;
+    *nb_blocks    += ((size_t) buf[3]) << 24;
     *nb_iterations =  (size_t) buf[4];
     *salt_size     =  (size_t) buf[5];
 }
