@@ -1,16 +1,18 @@
 Lock Stream Format
 ==================
 
+### Overview
+
 `luck` uses an encryption format inspired by
 Scuttlebutt's [box streams](https://ssbc.github.io/scuttlebutt-protocol-guide/#box-stream).
-The Lock Stream format is split into 3 main chunks:
+The Lock Stream format is split into 3 sections:
 
 | key chunk    | block stream | digest chunk |
 |:------------:|:------------:|:------------:|
 | `KX \| PDKF` | `BLOCK*`     | `DIGEST`     |
 
  - **key chunk** -- determines the encryption key used; there are
-   two modes:
+   two modes (exactly one can be specified):
    1. `KX` -- public-key encryption, only recepient with corresponding
    secret key can unlock the stream.
    2. `PDKF` -- password encryption, recepient that knows password can
@@ -22,7 +24,7 @@ The Lock Stream format is split into 3 main chunks:
    used for verifying that no tampering of the block stream was done.
 
 
-### Chunk format
+### Chunks
 
 Each chunk has a leading byte known as the 'head'.
 Reading the head then tells the decryption process how to
@@ -33,8 +35,9 @@ in unsigned LE format.
 
 ### `KX` chunk
 
-| `@`  | _ephemeral pubkey_ (32) |
-|:----:|:-----------------------:|
+| `@`  | _ephemeral pubkey_ |
+|:----:|:------------------:|
+|      | 32 bytes           |
 
 During encryption, an ephemeral secret and public keypair is generated.
 The encryption key is then calculated as:
@@ -49,12 +52,14 @@ the recepient supplies their secret key and the encryption key is then:
 
 ### `PDKF` chunk
 
-| `#`  | _memory cost_ (4) | _time cost_ (1) | _salt length_ (1) | _salt_ (\*) |
-|:----:|:-----------------:|:---------------:|:-----------------:|:-----------:|
+| `#`  | _memory cost_ | _time cost_ | _salt length_ | _salt_ |
+|:----:|:-------------:|:-----------:|:-------------:|:------:|
+|      | 4 bytes       | 1 byte      | 1 byte        |        |
 
 The memory cost (in KiB) is encoded as 4-byte unsigned LE,
 time cost (in iterations) as 1-byte, etc.
 Current parameters in `luck`:
+
  - memory cost = 100 000 KiB (100 MB)
  - time cost = 3
  - salt length = 32
@@ -72,8 +77,9 @@ decryption key is then calculated as:
 
 ### `BLOCK` chunk
 
-| `b` | _mac1_ (16) | _encrypted length_ (2) | _mac2_ (16) | _encrypted payload_ (\*) |
-|:---:|:-----------:|:----------------------:|:-----------:|:------------------------:|
+| `b` | _mac1_   | _encrypted length_ | _mac2_   | _encrypted payload_ |
+|:---:|:--------:|:------------------:|:--------:|:-------------------:|
+|     | 16 bytes | 2 bytes            | 16 bytes |                     |
 
 
 `BLOCK`s are produced by splitting up the original content into chunks
@@ -107,8 +113,9 @@ and increment the nonce appropriately.
 
 ### `DIGEST` chunk
 
-| `$` | _digest_ (64) |
-|:---:|:-------------:|
+| `$` | _digest_  |
+|:---:|:---------:|
+|     | 64 bytes  |
 
 The _digest_ is computed as:
 
