@@ -114,7 +114,9 @@ int ls_unlock_payload(uint8_t        *output,
 //
 // PDKF Block
 //
-void pdkf_encode_params(uint8_t* out, size_t nb_blocks, size_t nb_iterations, uint8_t* salt, size_t salt_size)
+void pdkf_encode_params(uint8_t* out,
+                        const size_t nb_blocks, const size_t nb_iterations,
+                        const uint8_t* salt, const size_t salt_size)
 {
     // uint8_t out[salt_size + 6]
     out[0] = (nb_blocks)       & 0xFF;
@@ -126,7 +128,9 @@ void pdkf_encode_params(uint8_t* out, size_t nb_blocks, size_t nb_iterations, ui
     memcpy(out + 6, salt, salt_size);
 }
 
-void pdkf_decode_params(uint8_t* buf, size_t* nb_blocks, size_t* nb_iterations, size_t* salt_size)
+void pdkf_decode_params(uint8_t* buf,
+                        size_t* nb_blocks, size_t* nb_iterations,
+                        size_t* salt_size)
 {
     *nb_blocks     =  (size_t) buf[0];
     *nb_blocks    += ((size_t) buf[1]) << 8;
@@ -370,6 +374,7 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
     // determine key mode
     __check_read(_read(fp, &head, 1));
     switch (head) {
+        default: __error("bad encryption");
         case HEAD_PDKF:
         {
             if (password == NULL)
@@ -403,8 +408,7 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
         // read head byte
         __check_read(_read(fp, &head, 1));
         switch (head) {
-            default:
-                __error("bad encryption");
+            default: __error("bad encryption");
             case HEAD_BLOCK:
             {
                 __check_read(  _read(fp, raw_buf, 18));
