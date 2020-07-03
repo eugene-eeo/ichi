@@ -392,6 +392,7 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
             break;
         }
         case HEAD_PUBKEY:
+        {
             __check_read(_read(fp, eph_pk, 32));
             if (key_fp == NULL)
                 __error("no secret key specified");
@@ -399,6 +400,7 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
                 __error("invalid secret key");
             crypto_key_exchange(shared_key, sk, eph_pk);
             break;
+        }
     }
 
     crypto_blake2b_general_init(&ctx, 64, shared_key, 32);
@@ -469,23 +471,23 @@ int main(int argc, char** argv)
 
     while ((c = getopt(argc, argv, "hg:wedk:p:")) != -1)
         switch (c) {
-        default: err("%s", SEE_HELP); goto out;
-        case 'h':
-            printf("%s", HELP);
-            rv = 0;
-            goto out;
-        case 'g': action = 'g'; no_argc = 1;   base = optarg;  break;
-        case 'w': action = 'w'; no_argc = 1;   expect_key = 1; break;
-        case 'e': action = 'e'; expect_fp = 1; expect_key_or_password = 1; break;
-        case 'd': action = 'd'; expect_fp = 1; expect_key_or_password = 1; break;
-        case 'p': password = optarg; break;
-        case 'k':
-            key_fp = fopen(optarg, "r");
-            if (key_fp == NULL) {
-                err("cannot open key file '%s'", optarg);
+            default: err("%s", SEE_HELP); goto out;
+            case 'h':
+                printf("%s", HELP);
+                rv = 0;
                 goto out;
-            }
-            break;
+            case 'g': action = 'g'; no_argc = 1;   base = optarg;  break;
+            case 'w': action = 'w'; no_argc = 1;   expect_key = 1; break;
+            case 'e': action = 'e'; expect_fp = 1; expect_key_or_password = 1; break;
+            case 'd': action = 'd'; expect_fp = 1; expect_key_or_password = 1; break;
+            case 'p': password = optarg; break;
+            case 'k':
+                key_fp = fopen(optarg, "r");
+                if (key_fp == NULL) {
+                    err("cannot open key file '%s'", optarg);
+                    goto out;
+                }
+                break;
         }
 
     if (key_fp != NULL && password != NULL) {
@@ -520,11 +522,11 @@ int main(int argc, char** argv)
     }
 
     switch (action) {
-    default:  err("%s", SEE_HELP);         break;
-    case 'g': rv = generate_keypair(base); break;
-    case 'w': rv = write_pubkey(key_fp);   break;
-    case 'e': rv = encrypt(fp, key_fp, password); break;
-    case 'd': rv = decrypt(fp, key_fp, password); break;
+        default:  err("%s", SEE_HELP);         break;
+        case 'g': rv = generate_keypair(base); break;
+        case 'w': rv = write_pubkey(key_fp);   break;
+        case 'e': rv = encrypt(fp, key_fp, password); break;
+        case 'd': rv = decrypt(fp, key_fp, password); break;
     }
 
 out:

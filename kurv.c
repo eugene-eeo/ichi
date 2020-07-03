@@ -449,25 +449,25 @@ int main(int argc, char** argv)
     int c;
     while ((c = getopt(argc, argv, "hg:wsck:di")) != -1)
         switch (c) {
-        default: err("invalid usage. see kurv -h"); goto error;
-        case 'h':
-            printf("%s", HELP);
-            rv = 0;
-            goto error;
-        case 'k':
-            key_fn = optarg;
-            key_fp = fopen(key_fn, "r");
-            if (key_fp == NULL) {
-                err("cannot open key file '%s'", key_fn);
+            default: err("invalid usage. see kurv -h"); goto error;
+            case 'h':
+                printf("%s", HELP);
+                rv = 0;
                 goto error;
-            }
-            break;
-        case 'i': check_show_id = 1; break;
-        case 'g': action = 'g'; base = optarg; break;
-        case 'w': action = 'w'; expect_key = 1; break;
-        case 's': action = 's'; expect_fp = 1; expect_key = 1; break;
-        case 'c': action = 'c'; expect_fp = 1; break;
-        case 'd': action = 'd'; expect_fp = 1; break;
+            case 'k':
+                key_fn = optarg;
+                key_fp = fopen(key_fn, "r");
+                if (key_fp == NULL) {
+                    err("cannot open key file '%s'", key_fn);
+                    goto error;
+                }
+                break;
+            case 'i': check_show_id = 1; break;
+            case 'g': action = 'g'; base = optarg; break;
+            case 'w': action = 'w'; expect_key = 1; break;
+            case 's': action = 's'; expect_fp = 1; expect_key = 1; break;
+            case 'c': action = 'c'; expect_fp = 1; break;
+            case 'd': action = 'd'; expect_fp = 1; break;
         }
 
     if (expect_key && key_fp == NULL) {
@@ -493,14 +493,14 @@ int main(int argc, char** argv)
         }
     }
     switch (action) {
-    default:  err("invalid usage. see kurv -h"); break;
-    case 'g': rv = generate_keypair(base); break;
-    case 's': rv = sign(fp, key_fp); break;
-    case 'c': rv = key_fp == NULL
-              ? check_keyring(fp, check_show_id)
-              : check(fp, key_fp, check_show_id, key_fn); break;
-    case 'd': rv = detach(fp); break;
-    case 'w': rv = write_pubkey(key_fp); break;
+        default:  err("invalid usage. see kurv -h"); break;
+        case 'g': rv = generate_keypair(base); break;
+        case 's': rv = sign(fp, key_fp); break;
+        case 'c': rv = key_fp == NULL
+                  ? check_keyring(fp, check_show_id)
+                  : check(fp, key_fp, check_show_id, key_fn); break;
+        case 'd': rv = detach(fp); break;
+        case 'w': rv = write_pubkey(key_fp); break;
     }
 
 error:
