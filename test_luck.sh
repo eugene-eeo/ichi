@@ -36,3 +36,29 @@ setup() {
     run luck -dk test/eve.sk test/enc
     [ "$status" != 0 ]
 }
+
+@test 'nested encryption' {
+    luck -g test/id1
+    luck -g test/id2
+    luck -ek test/id1.pk monocypher/monocypher.c \
+        | luck -ek test/id2.pk \
+        > test/enc
+    luck -dk test/id2.sk test/enc > test/dec
+    run luck -dk test/id1.sk test/dec
+    [ "$status" = 0 ]
+    [ "$output" = "$(cat monocypher/monocypher.c)" ]
+}
+
+@test 'password encryption' {
+    luck -g test/id
+
+    luck -ek test/id.pk README.md > test/enc-pubkey
+    luck -ep password   README.md > test/enc-pdkf
+
+    run luck -dp password test/enc-pubkey
+    [ "$status" != 0 ]
+
+    run luck -dp password test/enc-pdkf
+    [ "$status" = 0 ]
+    [ "$output" = "$(cat README.md)" ]
+}
