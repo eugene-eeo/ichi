@@ -471,7 +471,6 @@ int main(int argc, char** argv)
     char* password = NULL;
     int action = 0;
     int c;
-    int no_argc = 0;  // whether we expect argc
     int expect_fp   = 0;
     int expect_key  = 0;
     int expect_key_or_password = 0;
@@ -483,8 +482,8 @@ int main(int argc, char** argv)
                 printf("%s", HELP);
                 rv = 0;
                 goto out;
-            case 'g': action = 'g'; no_argc = 1;   base = optarg;  break;
-            case 'w': action = 'w'; no_argc = 1;   expect_key = 1; break;
+            case 'g': action = 'g'; base = optarg;  break;
+            case 'w': action = 'w'; expect_key = 1; break;
             case 'e': action = 'e'; expect_fp = 1; expect_key_or_password = 1; break;
             case 'd': action = 'd'; expect_fp = 1; expect_key_or_password = 1; break;
             case 'p': password = optarg; break;
@@ -499,7 +498,7 @@ int main(int argc, char** argv)
         __error("can only specify one of password or key");
     if (expect_key && key_fp == NULL)
         __error("no key specified");
-    if (no_argc && argc > optind)
+    if (!expect_fp && argc > optind)
         __error("%s", SEE_HELP);
     if (expect_fp) {
         if (argc == optind + 1) {
