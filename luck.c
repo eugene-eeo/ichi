@@ -188,7 +188,7 @@ int generate_keypair(char *base)
 
     // Secret key
     memcpy(fn, base, len);
-    memcpy(fn + len,  ".sk", 3);
+    memcpy(fn + len, ".sk", 3);
     fp = fopen(fn, "w");
     if (fp == NULL
             || fwrite(sk, 1, sizeof(sk), fp) != sizeof(sk)
@@ -199,7 +199,7 @@ int generate_keypair(char *base)
     }
 
     // Public key
-    memcpy(fn + len,  ".pk", 3);
+    memcpy(fn + len, ".pk", 3);
     fp = fopen(fn, "w");
     if (fp == NULL
             || fwrite(pk, 1, sizeof(pk), fp) != sizeof(pk)
@@ -465,6 +465,7 @@ error:
 
 int main(int argc, char** argv)
 {
+#define __error(...) { err(__VA_ARGS__); goto out; }
     int rv = 1;
     FILE* fp     = NULL;
     FILE* key_fp = NULL;
@@ -491,46 +492,33 @@ int main(int argc, char** argv)
             case 'p': password = optarg; break;
             case 'k':
                 key_fp = fopen(optarg, "r");
-                if (key_fp == NULL) {
-                    err("cannot open key file '%s'", optarg);
-                    goto out;
-                }
+                if (key_fp == NULL)
+                    __error("cannot open key file '%s'", optarg);
                 break;
         }
 
-    if (key_fp != NULL && password != NULL) {
-        err("can only specify one of password or key_fp");
-        goto out;
-    }
-    if (expect_key && key_fp == NULL) {
-        err("no key specified");
-        goto out;
-    }
-    if (no_argc && argc > optind) {
-        err("%s", SEE_HELP);
-        goto out;
-    }
+    if (key_fp != NULL && password != NULL)
+        __error("can only specify one of password or key_fp");
+    if (expect_key && key_fp == NULL)
+        __error("no key specified");
+    if (no_argc && argc > optind)
+        __error("%s", SEE_HELP);
     if (expect_fp) {
         if (argc == optind + 1) {
             fp = fopen(argv[optind], "r");
-            if (fp == NULL) {
-                err("cannot open '%s'", argv[optind]);
-                goto out;
-            }
+            if (fp == NULL)
+                __error("cannot open '%s'", argv[optind]);
         } else if (argc == optind) {
             fp = stdin;
         } else {
-            err("%s", SEE_HELP);
-            goto out;
+            __error("%s", SEE_HELP);
         }
     }
-    if (expect_key_or_password && key_fp == NULL && password == NULL) {
-        err("expected key or password");
-        goto out;
-    }
+    if (expect_key_or_password && key_fp == NULL && password == NULL)
+        __error("expected key or password");
 
     switch (action) {
-        default:  err("%s", SEE_HELP);         break;
+        default:  __error("%s", SEE_HELP);     break;
         case 'g': rv = generate_keypair(base); break;
         case 'w': rv = write_pubkey(key_fp);   break;
         case 'e': rv = encrypt(fp, key_fp, password); break;
@@ -547,4 +535,6 @@ out:
         rv = 1;
     }
     return rv;
+
+#undef __error
 }
