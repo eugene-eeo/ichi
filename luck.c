@@ -494,12 +494,9 @@ int main(int argc, char** argv)
                 break;
         }
 
-    if (key_fp != NULL && password != NULL)
-        __error("can only specify one of password or key");
-    if (expect_key && key_fp == NULL)
-        __error("no key specified");
-    if (!expect_fp && argc > optind)
-        __error("%s", SEE_HELP);
+    if (key_fp != NULL && password != NULL) __error("can only specify one of password or key");
+    if (expect_key && key_fp == NULL)       __error("no key specified");
+    if (!expect_fp && argc > optind)        __error("%s", SEE_HELP);
     if (expect_fp) {
         if (argc == optind + 1) {
             fp = fopen(argv[optind], "r");
