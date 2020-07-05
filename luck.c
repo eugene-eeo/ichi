@@ -326,8 +326,6 @@ int encrypt(FILE* fp, FILE* key_fp, char* password)
         __check_write(_write(stdout, &HEAD_PUBKEY, 1));
         __check_write(_write(stdout, eph_pk, sizeof(eph_pk)));
     } else {
-        if (password == NULL)
-            __error("no password specified");
         // use eph_sk as salt
         pdkf_encode_params(pdkf_out, 100000, 3, eph_sk, 32);
         pdkf_key(shared_key, 100000, 3,
@@ -498,7 +496,7 @@ int main(int argc, char** argv)
         }
 
     if (key_fp != NULL && password != NULL)
-        __error("can only specify one of password or key_fp");
+        __error("can only specify one of password or key");
     if (expect_key && key_fp == NULL)
         __error("no key specified");
     if (no_argc && argc > optind)
