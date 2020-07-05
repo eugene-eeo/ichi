@@ -437,6 +437,8 @@ error:
 
 int main(int argc, char** argv)
 {
+#define __error(...) { err(__VA_ARGS__); goto error; }
+
     FILE *fp     = NULL;
     FILE *key_fp = NULL;
     char *key_fn = NULL;
@@ -449,7 +451,7 @@ int main(int argc, char** argv)
     int c;
     while ((c = getopt(argc, argv, "hg:wsck:di")) != -1)
         switch (c) {
-            default: err("invalid usage. see kurv -h"); goto error;
+            default: __error("invalid usage. see kurv -h");
             case 'h':
                 printf("%s", HELP);
                 rv = 0;
@@ -457,10 +459,8 @@ int main(int argc, char** argv)
             case 'k':
                 key_fn = optarg;
                 key_fp = fopen(key_fn, "r");
-                if (key_fp == NULL) {
-                    err("cannot open key file '%s'", key_fn);
-                    goto error;
-                }
+                if (key_fp == NULL)
+                    __error("cannot open key file '%s'", key_fn);
                 break;
             case 'i': check_show_id = 1; break;
             case 'g': action = 'g'; base = optarg; break;
@@ -470,30 +470,21 @@ int main(int argc, char** argv)
             case 'd': action = 'd'; expect_fp = 1; break;
         }
 
-    if (expect_key && key_fp == NULL) {
-        err("no key specified.");
-        goto error;
-    }
-    if (!expect_fp && argc > optind) {
-        err("invalid usage. see kurv -h");
-        goto error;
-    }
+    if (expect_key && key_fp == NULL) __error("no key specified.");
+    if (!expect_fp && argc > optind)  __error("invalid usage. see kurv -h");
     if (expect_fp) {
         if (argc == optind) {
             fp = stdin;
         } else if (argc == optind + 1) {
             fp = fopen(argv[optind], "r");
-            if (fp == NULL) {
-                err("cannot open file '%s'", argv[optind]);
-                goto error;
-            }
+            if (fp == NULL)
+                __error("cannot open file '%s'", argv[optind]);
         } else {
-            err("invalid usage. see kurv -h");
-            goto error;
+            __error("invalid usage. see kurv -h");
         }
     }
     switch (action) {
-        default:  err("invalid usage. see kurv -h"); break;
+        default:  __error("invalid usage. see kurv -h"); break;
         case 'g': rv = generate_keypair(base); break;
         case 's': rv = sign(fp, key_fp); break;
         case 'c': rv = key_fp == NULL
@@ -511,4 +502,6 @@ error:
         rv = 1;
     }
     return rv;
+
+#undef __error
 }
