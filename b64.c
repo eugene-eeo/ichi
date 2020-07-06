@@ -55,8 +55,7 @@ int wraplines(size_t *so_far, size_t max, const uint8_t *buf, size_t bufsize, in
     return 0;
 }
 
-uint8_t *unwraplines(      uint8_t *head,
-                     const uint8_t *buf, size_t bufsize)
+uint8_t *unwraplines(uint8_t *head, const uint8_t *buf, size_t bufsize)
 {
     if (head >= buf + bufsize)
         return NULL;

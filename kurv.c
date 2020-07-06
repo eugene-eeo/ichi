@@ -438,6 +438,7 @@ error:
 int main(int argc, char** argv)
 {
 #define __error(...) { err(__VA_ARGS__); goto error; }
+#define __setaction(a) { if (action != 0) { __error("invalid usage. see kurv -h"); } action = a; }
 
     FILE *fp     = NULL;
     FILE *key_fp = NULL;
@@ -463,11 +464,11 @@ int main(int argc, char** argv)
                     __error("cannot open key file '%s'", key_fn);
                 break;
             case 'i': check_show_id = 1; break;
-            case 'g': action = 'g'; base = optarg; break;
-            case 'w': action = 'w'; expect_key = 1; break;
-            case 's': action = 's'; expect_fp = 1; expect_key = 1; break;
-            case 'c': action = 'c'; expect_fp = 1; break;
-            case 'd': action = 'd'; expect_fp = 1; break;
+            case 'g': __setaction('g'); base = optarg; break;
+            case 'w': __setaction('w'); expect_key = 1; break;
+            case 's': __setaction('s'); expect_fp = 1; expect_key = 1; break;
+            case 'c': __setaction('c'); expect_fp = 1; break;
+            case 'd': __setaction('d'); expect_fp = 1; break;
         }
 
     if (expect_key && key_fp == NULL) __error("no key specified.");
@@ -504,4 +505,5 @@ error:
     return rv;
 
 #undef __error
+#undef __setaction
 }
