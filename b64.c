@@ -7,15 +7,9 @@
 #include "base64/base64.h"
 #include "utils.h"
 
-#define err(...) {\
-    fprintf(stderr, "b64: ");\
-    fprintf(stderr, __VA_ARGS__);\
-    if (errno) {\
-        fprintf(stderr, ": ");\
-        perror(NULL);\
-    }\
-    else fprintf(stderr, "\n");\
-}
+#define err(...)       _err("b64", __VA_ARGS__)
+#define WIPE_CTX(ctx)  crypto_wipe(ctx, sizeof(*(ctx)))
+
 static const char* HELP =
     "usage: b64 -h\n"
     "       b64 [-e] [-w <length>]\n"
@@ -99,7 +93,7 @@ int encode(FILE* fp, size_t wrap)
 
     rv = 0;
 error:
-    crypto_wipe(ctx.buf, sizeof(ctx.buf));
+    WIPE_CTX(&ctx);
     _free(buf, bufsize);
     _free(enc, encsize);
     return rv;
@@ -148,7 +142,7 @@ int decode(FILE* fp)
 
     rv = 0;
 error:
-    crypto_wipe(ctx.buf, sizeof(ctx.buf));
+    WIPE_CTX(&ctx);
     _free(buf, bufsize);
     _free(dec, decsize);
     return rv;

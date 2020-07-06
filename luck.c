@@ -10,17 +10,9 @@
 #include "monocypher/monocypher.h"
 #include "utils.h"
 
-#define err(...) {\
-    fprintf(stderr, "luck: ");\
-    fprintf(stderr, __VA_ARGS__);\
-    if (errno) {\
-        fprintf(stderr, ": ");\
-        perror(NULL);\
-    }\
-    else fprintf(stderr, "\n");\
-}
-#define WIPE_CTX(ctx)        crypto_wipe(ctx, sizeof(*(ctx)))
-#define WIPE_BUFFER(buffer)  crypto_wipe(buffer, sizeof(buffer))
+#define err(...)          _err("luck", __VA_ARGS__)
+#define WIPE_CTX(ctx)     crypto_wipe(ctx, sizeof(*(ctx)))
+#define WIPE_BUF(buffer)  crypto_wipe(buffer, sizeof(buffer))
 
 static const char* SEE_HELP = "invalid usage: see luck -h";
 static const char* HELP =
@@ -84,7 +76,7 @@ void ls_lock(uint8_t       *output,  // input_size + 34
                 output + 18 + 16, /* mac */
                 key, nonce,
                 input, input_size);
-    WIPE_BUFFER(length);
+    WIPE_BUF(length);
 }
 
 int ls_unlock_length(size_t        *to_read,
@@ -105,7 +97,7 @@ int ls_unlock_length(size_t        *to_read,
     *to_read = (size_t) length_buf[0]
              | (size_t) length_buf[1] << 8;
 error:
-    WIPE_BUFFER(length_buf);
+    WIPE_BUF(length_buf);
     return rv;
 }
 
@@ -218,8 +210,8 @@ error_2:
         fclose(fp);
     _free(fn, len + 4);
 error_1:
-    WIPE_BUFFER(sk);
-    WIPE_BUFFER(pk);
+    WIPE_BUF(sk);
+    WIPE_BUF(pk);
     return rv;
 }
 
@@ -244,8 +236,8 @@ int write_pubkey(FILE* fp)
     rv = 0;
 
 error:
-    WIPE_BUFFER(sk);
-    WIPE_BUFFER(pk);
+    WIPE_BUF(sk);
+    WIPE_BUF(pk);
     return rv;
 }
 
@@ -295,8 +287,8 @@ int _encrypt(FILE* fp, uint8_t *key)
 error:
     _free(enc_buf, enc_buf_size);
     _free(raw_buf, raw_buf_size);
-    WIPE_BUFFER(digest);
-    WIPE_BUFFER(nonce);
+    WIPE_BUF(digest);
+    WIPE_BUF(nonce);
     WIPE_CTX(&ctx);
     return rv;
 
@@ -342,11 +334,11 @@ int encrypt(FILE* fp, FILE* key_fp, char* password)
     rv = _encrypt(fp, shared_key);
 
 error:
-    WIPE_BUFFER(pdkf_out);
-    WIPE_BUFFER(shared_key);
-    WIPE_BUFFER(eph_sk);
-    WIPE_BUFFER(eph_pk);
-    WIPE_BUFFER(pk);
+    WIPE_BUF(pdkf_out);
+    WIPE_BUF(shared_key);
+    WIPE_BUF(eph_sk);
+    WIPE_BUF(eph_pk);
+    WIPE_BUF(pk);
     return rv;
 
 #undef __error
@@ -453,10 +445,10 @@ error:
     length = 0;
     head = 0;
     WIPE_CTX(&ctx);
-    WIPE_BUFFER(nonce);
-    WIPE_BUFFER(eph_pk);
-    WIPE_BUFFER(sk);
-    WIPE_BUFFER(shared_key);
+    WIPE_BUF(nonce);
+    WIPE_BUF(eph_pk);
+    WIPE_BUF(sk);
+    WIPE_BUF(shared_key);
     return rv;
 
 #undef __error

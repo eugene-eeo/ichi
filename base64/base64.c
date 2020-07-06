@@ -67,7 +67,6 @@ int b64_isvalidchar(char c)
 }
 
 int b64_validate(const uint8_t input[], const size_t input_size) {
-    // Validate that input is valid
     if (input_size % 4 != 0)
         return -1;
     for (size_t i = 0; i < input_size; i++) {

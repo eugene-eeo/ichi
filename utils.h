@@ -3,6 +3,18 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <unistd.h>
+#include <errno.h>
+
+#define _err(name, ...) {\
+    fprintf(stderr, "%s: ", name);\
+    fprintf(stderr, __VA_ARGS__);\
+    if (errno) {\
+        fprintf(stderr, ": ");\
+        perror(NULL);\
+    }\
+    else fprintf(stderr, "\n");\
+}
 
 void _free(void* buf, int bufsize);
 int _fclose(FILE **fp);

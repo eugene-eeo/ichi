@@ -13,20 +13,12 @@
 #include "monocypher/monocypher.h"
 #include "utils.h"
 
-#define READ_SIZE (4096)
+#define READ_SIZE 4096
 #define B64_KEY_SIZE 44  // b64_encoded_size(32)
 #define B64_SIG_SIZE 88  // b64_encoded_size(64)
 #define SEE_USAGE "invalid usage: see kurv -h"
-#define err(...) {\
-    fprintf(stderr, "kurv: ");\
-    fprintf(stderr, __VA_ARGS__);\
-    if (errno) {\
-        fprintf(stderr, ": ");\
-        perror(NULL);\
-    } else {\
-        fprintf(stderr, "\n");\
-    }\
-}
+#define err(...) _err("kurv", __VA_ARGS__)
+
 static const char HELP[] =
     "usage: kurv -h\n"
     "       kurv -g <base>\n"
