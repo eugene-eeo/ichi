@@ -19,6 +19,8 @@
     }\
     else fprintf(stderr, "\n");\
 }
+#define WIPE_CTX(ctx)        crypto_wipe(ctx, sizeof(*(ctx)))
+#define WIPE_BUFFER(buffer)  crypto_wipe(buffer, sizeof(buffer))
 
 static const char* SEE_HELP = "invalid usage: see luck -h";
 static const char* HELP =
@@ -82,7 +84,7 @@ void ls_lock(uint8_t       *output,  // input_size + 34
                 output + 18 + 16, /* mac */
                 key, nonce,
                 input, input_size);
-    crypto_wipe(length, sizeof(length));
+    WIPE_BUFFER(length);
 }
 
 int ls_unlock_length(size_t        *to_read,
@@ -103,7 +105,7 @@ int ls_unlock_length(size_t        *to_read,
     *to_read = (size_t) length_buf[0]
              | (size_t) length_buf[1] << 8;
 error:
-    crypto_wipe(length_buf, sizeof(length_buf));
+    WIPE_BUFFER(length_buf);
     return rv;
 }
 
@@ -216,8 +218,8 @@ error_2:
         fclose(fp);
     _free(fn, len + 4);
 error_1:
-    crypto_wipe(sk, sizeof(sk));
-    crypto_wipe(pk, sizeof(pk));
+    WIPE_BUFFER(sk);
+    WIPE_BUFFER(pk);
     return rv;
 }
 
@@ -242,8 +244,8 @@ int write_pubkey(FILE* fp)
     rv = 0;
 
 error:
-    crypto_wipe(pk, sizeof(pk));
-    crypto_wipe(sk, sizeof(sk));
+    WIPE_BUFFER(sk);
+    WIPE_BUFFER(pk);
     return rv;
 }
 
@@ -293,8 +295,9 @@ int _encrypt(FILE* fp, uint8_t *key)
 error:
     _free(enc_buf, enc_buf_size);
     _free(raw_buf, raw_buf_size);
-    crypto_wipe(digest, 64);
-    crypto_wipe(nonce, 24);
+    WIPE_BUFFER(digest);
+    WIPE_BUFFER(nonce);
+    WIPE_CTX(&ctx);
     return rv;
 
 #undef __error
@@ -339,11 +342,11 @@ int encrypt(FILE* fp, FILE* key_fp, char* password)
     rv = _encrypt(fp, shared_key);
 
 error:
-    crypto_wipe(pdkf_out,   sizeof(pdkf_out));
-    crypto_wipe(shared_key, sizeof(shared_key));
-    crypto_wipe(eph_sk,     sizeof(eph_sk));
-    crypto_wipe(eph_pk,     sizeof(eph_pk));
-    crypto_wipe(pk,         sizeof(pk));
+    WIPE_BUFFER(pdkf_out);
+    WIPE_BUFFER(shared_key);
+    WIPE_BUFFER(eph_sk);
+    WIPE_BUFFER(eph_pk);
+    WIPE_BUFFER(pk);
     return rv;
 
 #undef __error
@@ -449,10 +452,11 @@ error:
     _free(dec_buf, dec_buf_size);
     length = 0;
     head = 0;
-    crypto_wipe(nonce,      sizeof(nonce));
-    crypto_wipe(eph_pk,     sizeof(eph_pk));
-    crypto_wipe(sk,         sizeof(sk));
-    crypto_wipe(shared_key, sizeof(shared_key));
+    WIPE_CTX(&ctx);
+    WIPE_BUFFER(nonce);
+    WIPE_BUFFER(eph_pk);
+    WIPE_BUFFER(sk);
+    WIPE_BUFFER(shared_key);
     return rv;
 
 #undef __error
@@ -473,8 +477,8 @@ int main(int argc, char** argv)
     char* password = NULL;
     int action = 0;
     int c;
-    int expect_fp   = 0;
-    int expect_key  = 0;
+    int expect_fp  = 0;
+    int expect_key = 0;
     int expect_key_or_password = 0;
 
     while ((c = getopt(argc, argv, "hg:wedk:p:")) != -1)
