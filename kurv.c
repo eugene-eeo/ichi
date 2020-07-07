@@ -253,7 +253,7 @@ int sign(FILE* fp, FILE* key_fp)
         goto error;
     }
 
-    uint8_t *buf = malloc(4096);
+    uint8_t *buf = malloc(READ_SIZE);
     if (buf == NULL) {
         ERR("cannot malloc");
         goto error_2;
