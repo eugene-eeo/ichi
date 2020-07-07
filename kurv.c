@@ -27,7 +27,7 @@ static const char HELP[] =
     "       kurv -d [FILE]\n"
     "       kurv -w -k <key>\n"
     "       kurv -s -k <key> [FILE]\n"
-    "       kurv -c [-k <key>] [-i] [FILE]\n"
+    "       kurv -c [-o] [-k <key>] [-i] [FILE]\n"
     "\nargs:\n"
     "  FILE        (signed) file (defaults: stdin)\n"
     "\noptions:\n"
@@ -40,8 +40,10 @@ static const char HELP[] =
     "  -c          check FILE using public key <key>.\n"
     "              if <key> is not specified, try '$KURV_KEYRING/*.pub'\n"
     "              one by one.\n"
-    "  -i          print path to public key used on successful check.\n\n"
-    ;
+    "  -o          print out the file contents as verification is done.\n"
+    "              note: it is possible that file contents are printed out\n"
+    "              but the signature is invalid.\n"
+    "  -i          print path to public key used on successful check.\n\n";
 
 static const char SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
 static const char SIG_END[]   = "\n----END KURV SIGNATURE----\n";
@@ -52,8 +54,8 @@ static const char SIG_END[]   = "\n----END KURV SIGNATURE----\n";
 int generate_keypair(char* base);
 int write_pubkey(FILE* key_fp);
 int sign(FILE* fp, FILE* key_fp);
-int check(FILE* fp, FILE* key_fp, int show_id, char* id);
-int check_keyring(FILE* fp, int show_id);
+int check(FILE* fp, FILE* key_fp, int show_id, char* id, int show_og);
+int check_keyring(FILE* fp, int show_id, int show_og);
 int detach(FILE* fp);
 
 // decode base64 signature into sig
@@ -106,9 +108,10 @@ int str_endswith(char* str, char* suffix)
     return memcmp(str + m - n, suffix, n);
 }
 
-int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
+int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64], int should_print)
 {
-#define __CHECK(x, m) { if (x) { ERR(m); goto error; } }
+#define __CHECK(x, m)    { if (x) { ERR(m); goto error; } }
+#define __CHECK_WRITE(x) __CHECK((x) != 0, "cannot write")
 
     int rv = 1;
     size_t size = 0;
@@ -126,12 +129,16 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
             // try to find signature in buf
             __CHECK(size < TOTAL_SIZE, "invalid stream");
             __CHECK(decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0, "malformed signature");
+            if (should_print)
+                __CHECK_WRITE(_write(stdout, buf, size - TOTAL_SIZE));
             crypto_blake2b_update(&ctx, buf, size - TOTAL_SIZE);
             crypto_blake2b_final(&ctx, digest);
             return 0;
         }
         if (size > READ_SIZE) {
             crypto_blake2b_update(&ctx, buf, size - READ_SIZE);
+            if (should_print)
+                __CHECK_WRITE(_write(stdout, buf, size - READ_SIZE));
             memmove(buf, buf + READ_SIZE, READ_SIZE);
             size -= READ_SIZE;
         }
@@ -141,6 +148,7 @@ error:
     _free(buf, 2*READ_SIZE);
     return rv;
 
+#undef __CHECK_WRITE
 #undef __CHECK
 }
 
@@ -293,7 +301,7 @@ error:
     return rv;
 }
 
-int check(FILE* fp, FILE* key_fp, int show_id, char* id)
+int check(FILE* fp, FILE* key_fp, int show_id, char* id, int show_og)
 {
     int rv = 1;
     uint8_t pk     [32],
@@ -305,7 +313,7 @@ int check(FILE* fp, FILE* key_fp, int show_id, char* id)
         goto error;
     }
 
-    if (read_signed_file(fp, digest, sig) != 0)
+    if (read_signed_file(fp, digest, sig, show_og) != 0)
         goto error;
 
     if (crypto_check(sig, pk, digest, 64) != 0) {
@@ -326,7 +334,7 @@ error:
     return rv;
 }
 
-int check_keyring(FILE* fp, int show_id)
+int check_keyring(FILE* fp, int show_id, int show_og)
 {
     int rv = 1;
     uint8_t pk     [32],
@@ -334,7 +342,7 @@ int check_keyring(FILE* fp, int show_id)
             sig    [64];
     DIR *dir = NULL;
 
-    if (read_signed_file(fp, digest, sig) != 0)
+    if (read_signed_file(fp, digest, sig, show_og) != 0)
         goto error;
 
     char* keyring = getenv("KURV_KEYRING");
@@ -394,39 +402,18 @@ error:
 
 int detach(FILE* fp)
 {
-#define __CHECK(x, msg) { if (x) { ERR(msg); goto error; } }
-
     int rv = 1;
-    uint8_t sig [64];
-    size_t size = 0;
-    uint8_t *buf = malloc(2 * READ_SIZE);
-    __CHECK(buf == NULL, "malloc");
+    uint8_t digest [64],
+            sig    [64];
 
-    for (;;) {
-        size_t n = fread(buf + size, 1, READ_SIZE, fp);
-        size += n;
-        __CHECK(ferror(fp), "cannot read");
-        if (feof(fp)) {
-            // try to find signature in buf
-            __CHECK(size < TOTAL_SIZE, "invalid stream");
-            __CHECK(decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0, "malformed signature");
-            __CHECK(_write(stdout, buf, size - TOTAL_SIZE) != 0, "cannot write to stdout");
-            rv = 0;
-            break;
-        }
-        if (size > READ_SIZE) {
-            __CHECK(_write(stdout, buf, size - READ_SIZE) != 0, "cannot write to stdout");
-            memcpy(buf, buf + READ_SIZE, READ_SIZE);
-            size -= READ_SIZE;
-        }
-    }
+    if (read_signed_file(fp, digest, sig, 1) != 0)
+        goto error;
+    rv = 0;
 
 error:
-    _free(buf, 2 * READ_SIZE);
+    WIPE_BUF(digest);
     WIPE_BUF(sig);
     return rv;
-
-#undef __CHECK
 }
 
 int main(int argc, char** argv)
@@ -439,12 +426,13 @@ int main(int argc, char** argv)
     char *key_fn = NULL;
     char *base = NULL;
     int check_show_id = 0;
+    int check_show_og = 0;
     int expect_fp  = 0;
     int expect_key = 0;
     int action = 0;
     int rv = 1;
     int c;
-    while ((c = getopt(argc, argv, "hg:wsck:di")) != -1)
+    while ((c = getopt(argc, argv, "hg:wsck:dio")) != -1)
         switch (c) {
             default: __ERROR(SEE_USAGE);
             case 'h':
@@ -458,6 +446,7 @@ int main(int argc, char** argv)
                     __ERROR("cannot open key file '%s'", key_fn);
                 break;
             case 'i': check_show_id = 1; break;
+            case 'o': check_show_og = 1; break;
             case 'g': __SETACTION('g'); base = optarg; break;
             case 'w': __SETACTION('w'); expect_key = 1; break;
             case 's': __SETACTION('s'); expect_fp = 1; expect_key = 1; break;
@@ -483,8 +472,8 @@ int main(int argc, char** argv)
         case 'g': rv = generate_keypair(base); break;
         case 's': rv = sign(fp, key_fp); break;
         case 'c': rv = key_fp == NULL
-                  ? check_keyring(fp, check_show_id)
-                  : check(fp, key_fp, check_show_id, key_fn); break;
+                  ? check_keyring(fp, check_show_id, check_show_og)
+                  : check(fp, key_fp, check_show_id, key_fn, check_show_og); break;
         case 'd': rv = detach(fp); break;
         case 'w': rv = write_pubkey(key_fp); break;
     }
