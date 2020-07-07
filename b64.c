@@ -7,7 +7,7 @@
 #include "base64/base64.h"
 #include "utils.h"
 
-#define err(...)       _err("b64", __VA_ARGS__)
+#define ERR(...)       _err("b64", __VA_ARGS__)
 #define WIPE_CTX(ctx)  crypto_wipe(ctx, sizeof(*(ctx)))
 
 static const char* HELP =
@@ -62,7 +62,7 @@ uint8_t *unwraplines(uint8_t *head, const uint8_t *buf, size_t bufsize)
 
 int encode(FILE* fp, size_t wrap)
 {
-#define __error(m) { err(m); goto error; }
+#define __ERROR(m) { ERR(m); goto error; }
 
     int rv = 1;
     size_t bufsize = 1024,
@@ -70,7 +70,7 @@ int encode(FILE* fp, size_t wrap)
     uint8_t *buf = malloc(1024),
             *enc = malloc(encsize);
     if (buf == NULL || enc == NULL)
-        __error("malloc");
+        __ERROR("malloc");
 
     size_t so_far = 0; // state for wraplines
     b64_encode_ctx ctx;
@@ -79,14 +79,14 @@ int encode(FILE* fp, size_t wrap)
     for (;;) {
         size_t n = fread(buf, 1, bufsize, fp);
         if (ferror(fp))
-            __error("fread");
+            __ERROR("fread");
         size_t m = b64_encode_update(&ctx, enc, buf, n);
         if (wraplines(&so_far, wrap, enc, m, 0) != 0)
-            __error("fwrite");
+            __ERROR("fwrite");
         if (feof(fp)) {
             m = b64_encode_final(&ctx, enc);
             if (wraplines(&so_far, wrap, enc, m, 1) != 0)
-                __error("fwrite");
+                __ERROR("fwrite");
             break;
         }
     }
@@ -98,12 +98,12 @@ error:
     _free(enc, encsize);
     return rv;
 
-#undef __error
+#undef __ERROR
 }
 
 int decode(FILE* fp)
 {
-#define __error(m) { err(m); goto error; }
+#define __ERROR(m) { ERR(m); goto error; }
 
     int rv = 1;
     size_t bufsize = 1024,
@@ -111,7 +111,7 @@ int decode(FILE* fp)
     uint8_t *buf = malloc(1024),
             *dec = malloc(decsize);
     if (buf == NULL || dec == NULL)
-        __error("malloc");
+        __ERROR("malloc");
 
     b64_decode_ctx ctx;
     b64_decode_init(&ctx);
@@ -119,23 +119,23 @@ int decode(FILE* fp)
     for (;;) {
         size_t n = fread(buf, 1, bufsize, fp);
         if (ferror(fp))
-            __error("fread");
+            __ERROR("fread");
 
         uint8_t *head = buf;
         uint8_t *tail;
         while ((tail = unwraplines(head, buf, n)) != NULL) {
             size_t m = b64_decode_update(&ctx, dec, head, tail - head);
             if (b64_decode_err(&ctx))
-                __error("invalid base64");
+                __ERROR("invalid base64");
             if (_write(stdout, dec, m) != 0)
-                __error("fwrite");
+                __ERROR("fwrite");
             head = tail + 1;
         }
 
         if (feof(fp)) {
             b64_decode_final(&ctx);
             if (b64_decode_err(&ctx))
-                __error("invalid base64");
+                __ERROR("invalid base64");
             break;
         }
     }
@@ -147,7 +147,7 @@ error:
     _free(dec, decsize);
     return rv;
 
-#undef __error
+#undef __ERROR
 }
 
 int main(int argc, char **argv)
@@ -160,7 +160,7 @@ int main(int argc, char **argv)
     while ((c = getopt(argc, argv, "hedw:")) != -1)
         switch (c) {
             default:
-                err("invalid usage: see b64 -h");
+                ERR("invalid usage: see b64 -h");
                 goto error;
             case 'h':
                 printf("%s", HELP);
@@ -170,7 +170,7 @@ int main(int argc, char **argv)
                 errno = 0;
                 wrap = strtol(optarg, &tmp, 10);
                 if (errno || tmp == optarg) {
-                    err("invalid argument to -w");
+                    ERR("invalid argument to -w");
                     goto error;
                 }
                 break;

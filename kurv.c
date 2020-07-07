@@ -17,7 +17,9 @@
 #define B64_KEY_SIZE 44  // b64_encoded_size(32)
 #define B64_SIG_SIZE 88  // b64_encoded_size(64)
 #define SEE_USAGE "invalid usage: see kurv -h"
-#define err(...) _err("kurv", __VA_ARGS__)
+
+#define ERR(...)      _err("kurv", __VA_ARGS__)
+#define WIPE_BUF(buf) crypto_wipe(buf, sizeof(buf))
 
 static const char HELP[] =
     "usage: kurv -h\n"
@@ -68,7 +70,7 @@ int decode_signature(uint8_t* sig, const uint8_t* b64_sig_buf) {
         b64_decode(sig, b64_sig, B64_SIG_SIZE);
         rv = 0;
     }
-    crypto_wipe(b64_sig, B64_SIG_SIZE);
+    WIPE_BUF(b64_sig);
     return rv;
 }
 
@@ -92,7 +94,7 @@ int key_from_file(FILE* fp, uint8_t key[32])
         b64_decode(key, b64_key, B64_KEY_SIZE);
         rv = 0;
     }
-    crypto_wipe(b64_key, B64_KEY_SIZE);
+    WIPE_BUF(b64_key);
     return rv;
 }
 
@@ -106,12 +108,12 @@ int str_endswith(char* str, char* suffix)
 
 int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
 {
-#define __check(x, m) { if (x) { err(m); goto error; } }
+#define __CHECK(x, m) { if (x) { ERR(m); goto error; } }
 
     int rv = 1;
     size_t size = 0;
     uint8_t *buf = malloc(2 * READ_SIZE);
-    __check(buf == NULL, "malloc");
+    __CHECK(buf == NULL, "malloc");
 
     crypto_blake2b_ctx ctx;
     crypto_blake2b_init(&ctx);
@@ -119,11 +121,11 @@ int read_signed_file(FILE* fp, uint8_t digest[64], uint8_t sig[64])
     for (;;) {
         size_t n = fread(buf + size, 1, READ_SIZE, fp);
         size += n;
-        __check(ferror(fp), "cannot read");
+        __CHECK(ferror(fp), "cannot read");
         if (feof(fp)) {
             // try to find signature in buf
-            __check(size < TOTAL_SIZE, "invalid stream");
-            __check(decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0, "malformed signature");
+            __CHECK(size < TOTAL_SIZE, "invalid stream");
+            __CHECK(decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0, "malformed signature");
             crypto_blake2b_update(&ctx, buf, size - TOTAL_SIZE);
             crypto_blake2b_final(&ctx, digest);
             return 0;
@@ -139,7 +141,7 @@ error:
     _free(buf, 2*READ_SIZE);
     return rv;
 
-#undef __check
+#undef __CHECK
 }
 
 int generate_keypair(char* base)
@@ -151,7 +153,7 @@ int generate_keypair(char* base)
             b64_pk[B64_KEY_SIZE];
 
     if (getrandom(sk, 32, 0) < 0) {
-        err("cannot generate random key");
+        ERR("cannot generate random key");
         goto error;
     }
 
@@ -162,7 +164,7 @@ int generate_keypair(char* base)
     size_t length = strlen(base);
     char* fn = malloc(length + 5 + 1);
     if (fn == NULL) {
-        err("malloc");
+        ERR("malloc");
         goto error;
     }
 
@@ -174,7 +176,7 @@ int generate_keypair(char* base)
         || _write(fp, b64_sk, B64_KEY_SIZE) != 0
         || _write(fp, (uint8_t*) "\n", 1) != 0
         || _fclose(&fp) != 0) {
-        err("cannot write private key in '%s'", fn);
+        ERR("cannot write private key in '%s'", fn);
         goto error_2;
     }
 
@@ -185,7 +187,7 @@ int generate_keypair(char* base)
         || _write(fp, b64_pk, B64_KEY_SIZE) != 0
         || _write(fp, (uint8_t*) "\n", 1) != 0
         || _fclose(&fp) != 0) {
-        err("cannot write public key in '%s'", fn);
+        ERR("cannot write public key in '%s'", fn);
         goto error_2;
     }
     rv = 0;
@@ -195,10 +197,10 @@ error_2:
     if (fp != NULL)
         fclose(fp);
 error:
-    crypto_wipe(b64_sk, B64_KEY_SIZE);
-    crypto_wipe(b64_pk, B64_KEY_SIZE);
-    crypto_wipe(sk, 32);
-    crypto_wipe(pk, 32);
+    WIPE_BUF(b64_sk);
+    WIPE_BUF(b64_pk);
+    WIPE_BUF(sk);
+    WIPE_BUF(pk);
     return rv;
 }
 
@@ -210,7 +212,7 @@ int write_pubkey(FILE* key_fp)
             b64_pk [B64_KEY_SIZE];
 
     if (key_from_file(key_fp, sk) != 0) {
-        err("invalid private key");
+        ERR("invalid private key");
         goto error;
     }
 
@@ -219,15 +221,15 @@ int write_pubkey(FILE* key_fp)
 
     if (_write(stdout, b64_pk, B64_KEY_SIZE) != 0
             || _write(stdout, (uint8_t *) "\n", 1) != 0) {
-        err("cannot write");
+        ERR("cannot write");
         goto error;
     }
     rv = 0;
 
 error:
-    crypto_wipe(sk, 32);
-    crypto_wipe(pk, 32);
-    crypto_wipe(b64_pk, B64_KEY_SIZE);
+    WIPE_BUF(sk);
+    WIPE_BUF(pk);
+    WIPE_BUF(b64_pk);
     return rv;
 }
 
@@ -240,13 +242,13 @@ int sign(FILE* fp, FILE* key_fp)
             b64_sig[B64_SIG_SIZE];
 
     if (key_from_file(key_fp, sk) != 0) {
-        err("invalid private key");
+        ERR("invalid private key");
         goto error;
     }
 
     uint8_t *buf = malloc(4096);
     if (buf == NULL) {
-        err("cannot malloc");
+        ERR("cannot malloc");
         goto error_2;
     }
 
@@ -256,12 +258,12 @@ int sign(FILE* fp, FILE* key_fp)
     for (;;) {
         size_t n = fread(buf, 1, READ_SIZE, fp);
         if (ferror(fp)) {
-            err("cannot read");
+            ERR("cannot read");
             goto error_2;
         }
         crypto_blake2b_update(&ctx, buf, n);
         if (_write(stdout, buf, n) != 0) {
-            err("cannot write to stdout");
+            ERR("cannot write to stdout");
             goto error_2;
         }
         if (feof(fp)) {
@@ -273,7 +275,7 @@ int sign(FILE* fp, FILE* key_fp)
                     || _write(stdout, (uint8_t*) "\n", 1) != 0
                     || _write(stdout, b64_sig + 44, B64_SIG_SIZE - 44) != 0
                     || _write(stdout, (uint8_t*) SIG_END, strlen(SIG_END)) != 0) {
-                err("cannot write to stdout");
+                ERR("cannot write to stdout");
                 goto error_2;
             }
             rv = 0;
@@ -284,10 +286,10 @@ int sign(FILE* fp, FILE* key_fp)
 error_2:
     _free(buf, READ_SIZE);
 error:
-    crypto_wipe(sk,      32);
-    crypto_wipe(digest,  64);
-    crypto_wipe(sig,     64);
-    crypto_wipe(b64_sig, B64_SIG_SIZE);
+    WIPE_BUF(sk);
+    WIPE_BUF(digest);
+    WIPE_BUF(sig);
+    WIPE_BUF(b64_sig);
     return rv;
 }
 
@@ -299,7 +301,7 @@ int check(FILE* fp, FILE* key_fp, int show_id, char* id)
             sig    [64];
 
     if (key_from_file(key_fp, pk) != 0) {
-        err("invalid public key");
+        ERR("invalid public key");
         goto error;
     }
 
@@ -307,20 +309,20 @@ int check(FILE* fp, FILE* key_fp, int show_id, char* id)
         goto error;
 
     if (crypto_check(sig, pk, digest, 64) != 0) {
-        err("invalid signature");
+        ERR("invalid signature");
         goto error;
     }
 
     if (show_id && printf("%s\n", id) < 0) {
-        err("cannot write");
+        ERR("cannot write");
         goto error;
     }
     rv = 0;
 
 error:
-    crypto_wipe(pk,     32);
-    crypto_wipe(digest, 64);
-    crypto_wipe(sig,    64);
+    WIPE_BUF(pk);
+    WIPE_BUF(digest);
+    WIPE_BUF(sig);
     return rv;
 }
 
@@ -337,14 +339,14 @@ int check_keyring(FILE* fp, int show_id)
 
     char* keyring = getenv("KURV_KEYRING");
     if (keyring == NULL || strlen(keyring) == 0) {
-        err("$KURV_KEYRING is not set");
+        ERR("$KURV_KEYRING is not set");
         goto error;
     }
 
     int dir_fd;
     dir = opendir(keyring);
     if (dir == NULL || (dir_fd = dirfd(dir)) < 0) {
-        err("cannot open keyring directory");
+        ERR("cannot open keyring directory");
         goto error;
     }
 
@@ -373,7 +375,7 @@ int check_keyring(FILE* fp, int show_id)
                           keyring,
                           keyring[strlen(keyring) - 1] == '/' ? "" : "/",
                           dr->d_name) < 0) {
-            err("cannot write");
+            ERR("cannot write");
             goto error;
         }
         // found it!
@@ -384,36 +386,36 @@ int check_keyring(FILE* fp, int show_id)
 
 error:
     if (dir != NULL) closedir(dir);
-    crypto_wipe(pk,     32);
-    crypto_wipe(digest, 64);
-    crypto_wipe(sig,    64);
+    WIPE_BUF(pk);
+    WIPE_BUF(digest);
+    WIPE_BUF(sig);
     return rv;
 }
 
 int detach(FILE* fp)
 {
-#define __check(x, msg) { if (x) { err(msg); goto error; } }
+#define __CHECK(x, msg) { if (x) { ERR(msg); goto error; } }
 
     int rv = 1;
     uint8_t sig [64];
     size_t size = 0;
     uint8_t *buf = malloc(2 * READ_SIZE);
-    __check(buf == NULL, "malloc");
+    __CHECK(buf == NULL, "malloc");
 
     for (;;) {
         size_t n = fread(buf + size, 1, READ_SIZE, fp);
         size += n;
-        __check(ferror(fp), "cannot read");
+        __CHECK(ferror(fp), "cannot read");
         if (feof(fp)) {
             // try to find signature in buf
-            __check(size < TOTAL_SIZE, "invalid stream");
-            __check(decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0, "malformed signature");
-            __check(_write(stdout, buf, size - TOTAL_SIZE) != 0, "cannot write to stdout");
+            __CHECK(size < TOTAL_SIZE, "invalid stream");
+            __CHECK(decode_armoured_signature(sig, buf + (size - TOTAL_SIZE)) != 0, "malformed signature");
+            __CHECK(_write(stdout, buf, size - TOTAL_SIZE) != 0, "cannot write to stdout");
             rv = 0;
             break;
         }
         if (size > READ_SIZE) {
-            __check(_write(stdout, buf, size - READ_SIZE) != 0, "cannot write to stdout");
+            __CHECK(_write(stdout, buf, size - READ_SIZE) != 0, "cannot write to stdout");
             memcpy(buf, buf + READ_SIZE, READ_SIZE);
             size -= READ_SIZE;
         }
@@ -421,16 +423,16 @@ int detach(FILE* fp)
 
 error:
     _free(buf, 2 * READ_SIZE);
-    crypto_wipe(sig, 64);
+    WIPE_BUF(sig);
     return rv;
 
-#undef __check
+#undef __CHECK
 }
 
 int main(int argc, char** argv)
 {
-#define __error(...) { err(__VA_ARGS__); goto error; }
-#define __setaction(a) { if (action != 0) { __error("invalid usage. see kurv -h"); } action = a; }
+#define __ERROR(...)   { ERR(__VA_ARGS__); goto error; }
+#define __SETACTION(a) { if (action != 0) { __ERROR(SEE_USAGE); } action = a; }
 
     FILE *fp     = NULL;
     FILE *key_fp = NULL;
@@ -444,7 +446,7 @@ int main(int argc, char** argv)
     int c;
     while ((c = getopt(argc, argv, "hg:wsck:di")) != -1)
         switch (c) {
-            default: __error("invalid usage. see kurv -h");
+            default: __ERROR(SEE_USAGE);
             case 'h':
                 printf("%s", HELP);
                 rv = 0;
@@ -453,31 +455,31 @@ int main(int argc, char** argv)
                 key_fn = optarg;
                 key_fp = fopen(key_fn, "r");
                 if (key_fp == NULL)
-                    __error("cannot open key file '%s'", key_fn);
+                    __ERROR("cannot open key file '%s'", key_fn);
                 break;
             case 'i': check_show_id = 1; break;
-            case 'g': __setaction('g'); base = optarg; break;
-            case 'w': __setaction('w'); expect_key = 1; break;
-            case 's': __setaction('s'); expect_fp = 1; expect_key = 1; break;
-            case 'c': __setaction('c'); expect_fp = 1; break;
-            case 'd': __setaction('d'); expect_fp = 1; break;
+            case 'g': __SETACTION('g'); base = optarg; break;
+            case 'w': __SETACTION('w'); expect_key = 1; break;
+            case 's': __SETACTION('s'); expect_fp = 1; expect_key = 1; break;
+            case 'c': __SETACTION('c'); expect_fp = 1; break;
+            case 'd': __SETACTION('d'); expect_fp = 1; break;
         }
 
-    if (expect_key && key_fp == NULL) __error("no key specified.");
-    if (!expect_fp && argc > optind)  __error("invalid usage. see kurv -h");
+    if (expect_key && key_fp == NULL) __ERROR("no key specified.");
+    if (!expect_fp && argc > optind)  __ERROR(SEE_USAGE);
     if (expect_fp) {
         if (argc == optind) {
             fp = stdin;
         } else if (argc == optind + 1) {
             fp = fopen(argv[optind], "r");
             if (fp == NULL)
-                __error("cannot open file '%s'", argv[optind]);
+                __ERROR("cannot open file '%s'", argv[optind]);
         } else {
-            __error("invalid usage. see kurv -h");
+            __ERROR(SEE_USAGE);
         }
     }
     switch (action) {
-        default:  __error("invalid usage. see kurv -h"); break;
+        default:  __ERROR(SEE_USAGE); break;
         case 'g': rv = generate_keypair(base); break;
         case 's': rv = sign(fp, key_fp); break;
         case 'c': rv = key_fp == NULL
@@ -491,11 +493,11 @@ error:
     if (fp     != NULL) fclose(fp);
     if (key_fp != NULL) fclose(key_fp);
     if (fclose(stdout) != 0) {
-        err("cannot close stdout");
+        ERR("cannot close stdout");
         rv = 1;
     }
     return rv;
 
-#undef __error
-#undef __setaction
+#undef __ERROR
+#undef __SETACTION
 }

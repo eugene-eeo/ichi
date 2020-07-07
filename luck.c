@@ -10,7 +10,7 @@
 #include "monocypher/monocypher.h"
 #include "utils.h"
 
-#define err(...)          _err("luck", __VA_ARGS__)
+#define ERR(...)          _err("luck", __VA_ARGS__)
 #define WIPE_CTX(ctx)     crypto_wipe(ctx, sizeof(*(ctx)))
 #define WIPE_BUF(buffer)  crypto_wipe(buffer, sizeof(buffer))
 
@@ -166,7 +166,7 @@ int generate_keypair(char *base)
             pk[32];
 
     if (getrandom(sk, sizeof(sk), 0) < 0) {
-        err("cannot generate keypair");
+        ERR("cannot generate keypair");
         goto error_1;
     }
 
@@ -176,7 +176,7 @@ int generate_keypair(char *base)
     FILE* fp;
     char* fn = malloc(len + 4);
     if (fn == NULL) {
-        err("cannot malloc");
+        ERR("cannot malloc");
         goto error_1;
     }
 
@@ -188,7 +188,7 @@ int generate_keypair(char *base)
             || fwrite(sk, 1, sizeof(sk), fp) != sizeof(sk)
             || fwrite("\n", 1, 1, fp) != 1
             || _fclose(&fp) != 0) {
-        err("cannot write secret key in '%s'", fn);
+        ERR("cannot write secret key in '%s'", fn);
         goto error_2;
     }
 
@@ -199,7 +199,7 @@ int generate_keypair(char *base)
             || fwrite(pk, 1, sizeof(pk), fp) != sizeof(pk)
             || fwrite("\n", 1, 1, fp) != 1
             || _fclose(&fp) != 0) {
-        err("cannot write public key in '%s'", fn);
+        ERR("cannot write public key in '%s'", fn);
         goto error_2;
     }
 
@@ -222,7 +222,7 @@ int write_pubkey(FILE* fp)
             pk[32];
 
     if (_read(fp, sk, 32) != 0) {
-        err("invalid secret key");
+        ERR("invalid secret key");
         goto error;
     }
 
@@ -230,7 +230,7 @@ int write_pubkey(FILE* fp)
 
     if (_write(stdout, pk, sizeof(pk)) != 0
             || _write(stdout, (uint8_t *) "\n", 1) != 0) {
-        err("cannot write");
+        ERR("cannot write");
         goto error;
     }
     rv = 0;
@@ -243,8 +243,8 @@ error:
 
 int _encrypt(FILE* fp, uint8_t *key)
 {
-#define __error(m)       { err(m); goto error; }
-#define __check_write(x) { if ((x) != 0) __error("cannot write"); }
+#define __ERROR(m)       { ERR(m); goto error; }
+#define __CHECK_WRITE(x) { if ((x) != 0) __ERROR("cannot write"); }
 
     int rv = 1;
     size_t raw_buf_size = 4096,
@@ -253,7 +253,7 @@ int _encrypt(FILE* fp, uint8_t *key)
     uint8_t *raw_buf = malloc(raw_buf_size),
             *enc_buf = malloc(enc_buf_size);
     if (raw_buf == NULL || enc_buf == NULL)
-        __error("cannot malloc");
+        __ERROR("cannot malloc");
 
     uint8_t nonce[24] = { 0 };
     uint8_t digest[64];
@@ -265,20 +265,20 @@ int _encrypt(FILE* fp, uint8_t *key)
     for (;;) {
         n = fread(raw_buf, 1, raw_buf_size, fp);
         if (ferror(fp))
-            __error("cannot read");
+            __ERROR("cannot read");
         if (n > 0) {
             crypto_blake2b_update(&ctx, raw_buf, n);
             ls_lock(enc_buf,
                     nonce,
                     key,
                     raw_buf, n);
-            __check_write(_write(stdout, &HEAD_BLOCK, 1));
-            __check_write(_write(stdout, enc_buf, n + 34));
+            __CHECK_WRITE(_write(stdout, &HEAD_BLOCK, 1));
+            __CHECK_WRITE(_write(stdout, enc_buf, n + 34));
         }
         if (feof(fp)) {
             crypto_blake2b_final(&ctx, digest);
-            __check_write(_write(stdout, &HEAD_DIGEST, 1));
-            __check_write(_write(stdout, digest, 64));
+            __CHECK_WRITE(_write(stdout, &HEAD_DIGEST, 1));
+            __CHECK_WRITE(_write(stdout, digest, 64));
             rv = 0;
             break;
         }
@@ -292,14 +292,14 @@ error:
     WIPE_CTX(&ctx);
     return rv;
 
-#undef __error
-#undef __check_write
+#undef __ERROR
+#undef __CHECK_WRITE
 }
 
 int encrypt(FILE* fp, FILE* key_fp, char* password)
 {
-#define __error(m)       { err(m); goto error; }
-#define __check_write(x) { if ((x) != 0) __error("cannot write"); }
+#define __ERROR(m)       { ERR(m); goto error; }
+#define __CHECK_WRITE(x) { if ((x) != 0) __ERROR("cannot write"); }
 
     int rv = 1;
     uint8_t eph_sk     [32],
@@ -309,17 +309,17 @@ int encrypt(FILE* fp, FILE* key_fp, char* password)
             pdkf_out   [32 + 6];
 
     if (getrandom(eph_sk, sizeof(eph_sk), 0) < 0)
-        __error("cannot generate random key");
+        __ERROR("cannot generate random key");
 
     if (key_fp != NULL) {
         if (_read(key_fp, pk, 32) != 0)
-            __error("invalid public key");
+            __ERROR("invalid public key");
 
         crypto_key_exchange_public_key(eph_pk, eph_sk);
         crypto_key_exchange(shared_key, eph_sk, pk);
 
-        __check_write(_write(stdout, &HEAD_PUBKEY, 1));
-        __check_write(_write(stdout, eph_pk, sizeof(eph_pk)));
+        __CHECK_WRITE(_write(stdout, &HEAD_PUBKEY, 1));
+        __CHECK_WRITE(_write(stdout, eph_pk, sizeof(eph_pk)));
     } else {
         // use eph_sk as salt
         pdkf_encode_params(pdkf_out, 100000, 3, eph_sk, 32);
@@ -327,8 +327,8 @@ int encrypt(FILE* fp, FILE* key_fp, char* password)
                  (uint8_t *) password, strlen(password),
                  eph_sk, 32);
 
-        __check_write(_write(stdout, &HEAD_PDKF, 1));
-        __check_write(_write(stdout, pdkf_out, sizeof(pdkf_out)));
+        __CHECK_WRITE(_write(stdout, &HEAD_PDKF, 1));
+        __CHECK_WRITE(_write(stdout, pdkf_out, sizeof(pdkf_out)));
     }
 
     rv = _encrypt(fp, shared_key);
@@ -341,16 +341,16 @@ error:
     WIPE_BUF(pk);
     return rv;
 
-#undef __error
-#undef __check_write
+#undef __ERROR
+#undef __CHECK_WRITE
 }
 
 int decrypt(FILE* fp, FILE* key_fp, char* password)
 {
-#define __error(m)        { err(m); goto error; }
-#define __check_write(x)  { if ((x) != 0) __error("cannot write"); }
-#define __check_read(x)   { if ((x) != 0) __error("bad encryption: cannot read"); }
-#define __check_unlock(x) { if ((x) != 0) __error("bad encryption: cannot unlock"); }
+#define __ERROR(m)        { ERR(m); goto error; }
+#define __CHECK_WRITE(x)  { if ((x) != 0) __ERROR("cannot write"); }
+#define __CHECK_READ(x)   { if ((x) != 0) __ERROR("bad encryption: cannot read"); }
+#define __CHECK_UNLOCK(x) { if ((x) != 0) __ERROR("bad encryption: cannot unlock"); }
 
     int rv = 1;
     uint8_t eph_pk      [32],
@@ -364,7 +364,7 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
     uint8_t *raw_buf = malloc(raw_buf_size),
             *dec_buf = malloc(dec_buf_size);
     if (raw_buf == NULL || dec_buf == NULL)
-        __error("malloc failed");
+        __ERROR("malloc failed");
 
     uint8_t nonce[24] = { 0 };
     uint8_t digest[64];
@@ -373,19 +373,19 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
     crypto_blake2b_ctx ctx;
 
     // determine key mode
-    __check_read(_read(fp, &head, 1));
+    __CHECK_READ(_read(fp, &head, 1));
     switch (head) {
-        default: __error("bad encryption");
+        default: __ERROR("bad encryption");
         case HEAD_PDKF:
         {
             if (password == NULL)
-                __error("no password specified");
+                __ERROR("no password specified");
             size_t nb_blocks,
                    nb_iterations,
                    salt_size;
-            __check_read(_read(fp, pdkf_params, 6));
+            __CHECK_READ(_read(fp, pdkf_params, 6));
             pdkf_decode_params(pdkf_params, &nb_blocks, &nb_iterations, &salt_size);
-            __check_read(_read(fp, pdkf_salt, salt_size));
+            __CHECK_READ(_read(fp, pdkf_salt, salt_size));
             pdkf_key(shared_key,
                      nb_blocks, nb_iterations,
                      (uint8_t *) password, strlen(password),
@@ -394,11 +394,11 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
         }
         case HEAD_PUBKEY:
         {
-            __check_read(_read(fp, eph_pk, 32));
+            __CHECK_READ(_read(fp, eph_pk, 32));
             if (key_fp == NULL)
-                __error("no secret key specified");
+                __ERROR("no secret key specified");
             if (_read(key_fp, sk, 32) != 0)
-                __error("invalid secret key");
+                __ERROR("invalid secret key");
             crypto_key_exchange(shared_key, sk, eph_pk);
             break;
         }
@@ -409,29 +409,29 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
     int done = 0;
     while (!done) {
         // read head byte
-        __check_read(_read(fp, &head, 1));
+        __CHECK_READ(_read(fp, &head, 1));
         switch (head) {
-            default: __error("bad encryption");
+            default: __ERROR("bad encryption");
             case HEAD_BLOCK:
             {
-                __check_read(  _read(fp, raw_buf, 18));
-                __check_unlock(ls_unlock_length(&length, nonce, shared_key, raw_buf));
-                __check_read(  _read(fp, raw_buf, length + 16));
-                __check_unlock(ls_unlock_payload(dec_buf, nonce, shared_key, raw_buf, length));
-                __check_write( _write(stdout, dec_buf, length));
+                __CHECK_READ(  _read(fp, raw_buf, 18));
+                __CHECK_UNLOCK(ls_unlock_length(&length, nonce, shared_key, raw_buf));
+                __CHECK_READ(  _read(fp, raw_buf, length + 16));
+                __CHECK_UNLOCK(ls_unlock_payload(dec_buf, nonce, shared_key, raw_buf, length));
+                __CHECK_WRITE( _write(stdout, dec_buf, length));
                 crypto_blake2b_update(&ctx, dec_buf, length);
                 break;
             }
             case HEAD_DIGEST:
             {
                 crypto_blake2b_final(&ctx, digest);
-                __check_read(_read(fp, raw_buf, 64));
+                __CHECK_READ(_read(fp, raw_buf, 64));
                 if (crypto_verify64(digest, raw_buf) != 0)
-                    __error("digest doesn't match");
+                    __ERROR("digest doesn't match");
                 // expect EOF - do one extra read here otherwise we cannot
                 // detect EOF.
                 if (fread(raw_buf, 1, 1, fp) == 1 || !feof(fp))
-                    __error("expected EOF");
+                    __ERROR("expected EOF");
                 done = 1;
                 rv = 0;
                 break;
@@ -451,16 +451,16 @@ error:
     WIPE_BUF(shared_key);
     return rv;
 
-#undef __error
-#undef __check_write
-#undef __check_read
-#undef __check_unlock
+#undef __ERROR
+#undef __CHECK_WRITE
+#undef __CHECK_READ
+#undef __CHECK_UNLOCK
 }
 
 int main(int argc, char** argv)
 {
-#define __error(...) { err(__VA_ARGS__); goto out; }
-#define __setaction(a) { if (action != 0) { __error("%s", SEE_HELP); } action = a; }
+#define __ERROR(...) { ERR(__VA_ARGS__); goto out; }
+#define __SETACTION(a) { if (action != 0) { __ERROR("%s", SEE_HELP); } action = a; }
 
     int rv = 1;
     FILE* fp     = NULL;
@@ -475,42 +475,42 @@ int main(int argc, char** argv)
 
     while ((c = getopt(argc, argv, "hg:wedk:p:")) != -1)
         switch (c) {
-            default: err("%s", SEE_HELP); goto out;
+            default: ERR("%s", SEE_HELP); goto out;
             case 'h':
                 printf("%s", HELP);
                 rv = 0;
                 goto out;
-            case 'g': __setaction('g'); base = optarg;  break;
-            case 'w': __setaction('w'); expect_key = 1; break;
-            case 'e': __setaction('e'); expect_fp = 1; expect_key_or_password = 1; break;
-            case 'd': __setaction('d'); expect_fp = 1; expect_key_or_password = 1; break;
+            case 'g': __SETACTION('g'); base = optarg;  break;
+            case 'w': __SETACTION('w'); expect_key = 1; break;
+            case 'e': __SETACTION('e'); expect_fp = 1; expect_key_or_password = 1; break;
+            case 'd': __SETACTION('d'); expect_fp = 1; expect_key_or_password = 1; break;
             case 'p': password = optarg; break;
             case 'k':
                 key_fp = fopen(optarg, "r");
                 if (key_fp == NULL)
-                    __error("cannot open key file '%s'", optarg);
+                    __ERROR("cannot open key file '%s'", optarg);
                 break;
         }
 
-    if (key_fp != NULL && password != NULL) __error("can only specify one of password or key");
-    if (expect_key && key_fp == NULL)       __error("no key specified");
-    if (!expect_fp && argc > optind)        __error("%s", SEE_HELP);
+    if (key_fp != NULL && password != NULL) __ERROR("can only specify one of password or key");
+    if (expect_key && key_fp == NULL)       __ERROR("no key specified");
+    if (!expect_fp && argc > optind)        __ERROR("%s", SEE_HELP);
     if (expect_fp) {
         if (argc == optind + 1) {
             fp = fopen(argv[optind], "r");
             if (fp == NULL)
-                __error("cannot open '%s'", argv[optind]);
+                __ERROR("cannot open '%s'", argv[optind]);
         } else if (argc == optind) {
             fp = stdin;
         } else {
-            __error("%s", SEE_HELP);
+            __ERROR("%s", SEE_HELP);
         }
     }
     if (expect_key_or_password && key_fp == NULL && password == NULL)
-        __error("expected key or password");
+        __ERROR("expected key or password");
 
     switch (action) {
-        default:  __error("%s", SEE_HELP);     break;
+        default:  __ERROR("%s", SEE_HELP);     break;
         case 'g': rv = generate_keypair(base); break;
         case 'w': rv = write_pubkey(key_fp);   break;
         case 'e': rv = encrypt(fp, key_fp, password); break;
@@ -523,11 +523,11 @@ out:
     if (fp     != NULL) fclose(fp);
     if (key_fp != NULL) fclose(key_fp);
     if (fclose(stdout) != 0) {
-        err("cannot close stdout");
+        ERR("cannot close stdout");
         rv = 1;
     }
     return rv;
 
-#undef __error
-#undef __setaction
+#undef __ERROR
+#undef __SETACTION
 }
