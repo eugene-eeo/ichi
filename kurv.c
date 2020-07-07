@@ -27,9 +27,9 @@ static const char HELP[] =
     "       kurv -d [FILE]\n"
     "       kurv -w -k <key>\n"
     "       kurv -s -k <key> [FILE]\n"
-    "       kurv -c [-o] [-k <key>] [-i] [FILE]\n"
+    "       kurv -c [-k <key>] [-o] [-i] [FILE]\n"
     "\nargs:\n"
-    "  FILE        (signed) file (defaults: stdin)\n"
+    "  FILE        (signed) file (default: stdin)\n"
     "\noptions:\n"
     "  -h          show help page.\n"
     "  -g <base>   generate keypair in <base>.priv and <base>.pub.\n"
@@ -41,9 +41,8 @@ static const char HELP[] =
     "              if <key> is not specified, try '$KURV_KEYRING/*.pub'\n"
     "              one by one.\n"
     "  -o          print out the file contents as verification is done.\n"
-    "              note: it is possible that file contents are printed out\n"
-    "              but the signature is invalid.\n"
-    "  -i          print path to public key used on successful check.\n\n";
+    "  -i          print in stderr path to public key on successful check.\n\n"
+    ;
 
 static const char SIG_START[] = "\n----BEGIN KURV SIGNATURE----\n";
 static const char SIG_END[]   = "\n----END KURV SIGNATURE----\n";
@@ -321,10 +320,8 @@ int check(FILE* fp, FILE* key_fp, int show_id, char* id, int show_og)
         goto error;
     }
 
-    if (show_id && printf("%s\n", id) < 0) {
-        ERR("cannot write");
-        goto error;
-    }
+    if (show_id)
+        ERR("pubkey: %s", id);
     rv = 0;
 
 error:
@@ -378,15 +375,12 @@ int check_keyring(FILE* fp, int show_id, int show_og)
             fclose(key_fp);
             continue;
         }
-        if (show_id
-                && printf("%s%s%s\n",
-                          keyring,
-                          keyring[strlen(keyring) - 1] == '/' ? "" : "/",
-                          dr->d_name) < 0) {
-            ERR("cannot write");
-            goto error;
-        }
         // found it!
+        if (show_id)
+            ERR("pubkey: %s%s%s",
+                keyring,
+                keyring[strlen(keyring) - 1] == '/' ? "" : "/",
+                dr->d_name);
         rv = 0;
         fclose(key_fp);
         goto error;

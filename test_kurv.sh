@@ -65,9 +65,17 @@ setup() {
     kurv -sk test/id.priv README.md > test/output.txt
 
     # with -i specified
-    run kurv -ck test/id.pub -i test/output.txt
-    [ "$status" -eq 0 ]
-    [ "$output" = 'test/id.pub' ]
+    kurv -ck test/id.pub -i test/output.txt 2> test/id.txt
+    [ "$(cat test/id.txt)" = 'kurv: pubkey: test/id.pub' ]
+
+    # with -o specified
+    output=$(kurv -ck test/id.pub -o test/output.txt)
+    [ "$output" = "$(cat README.md)" ]
+
+    # with -io specified
+    output=$(kurv -ck test/id.pub -io test/output.txt 2> test/id.txt)
+    [ "$output" = "$(cat README.md)" ]
+    [ "$(cat test/id.txt)" = 'kurv: pubkey: test/id.pub' ]
 }
 
 @test "keyring support" {
@@ -87,14 +95,11 @@ setup() {
         run kurv -c test/output.txt
         [ "$status" -ne 0 ]
 
-        KURV_KEYRING="test/keyring/" run kurv -ci test/output.txt
-        [ "$status" -eq 0 ]
-        [ "$output" = "$id.pub" ]
-
-        # KURV_KEYRING without ending slash
-        KURV_KEYRING="test/keyring" run kurv -ci test/output.txt
-        [ "$status" -eq 0 ]
-        [ "$output" = "$id.pub" ]
+        # with and w/o trailing slash
+        for keyring_dir in "test/keyring/" "test/keyring"; do
+            KURV_KEYRING="$keyring_dir" kurv -ci test/output.txt 2>test/id.txt
+            [ "$(cat test/id.txt)" = "kurv: pubkey: $id.pub" ]
+        done
     done
 }
 
