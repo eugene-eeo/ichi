@@ -50,10 +50,6 @@ setup() {
 }
 
 @test 'password encryption' {
-    # no askpass
-    run luck -ep README.md
-    [ "$status" != 0 ]
-
     # bad askpass output
     LUCK_ASKPASS='false' run luck -ep README.md
     [ "$status" != 0 ]

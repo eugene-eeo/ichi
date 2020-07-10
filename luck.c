@@ -8,6 +8,7 @@
 #include <sys/random.h>
 
 #include "monocypher/monocypher.h"
+#include "readpassphrase.h"
 #include "utils.h"
 
 #define ERR(...)          _err("luck", __VA_ARGS__)
@@ -163,22 +164,28 @@ int pdkf_key(uint8_t *key,
 //
 // PDKF Askpass support
 //
-int pdkf_askpass(uint8_t* buf, size_t bufsize, size_t *password_size)
+int pdkf_askpass(char* buf, size_t bufsize)
 {
     int rv = 1;
     char *prog = getenv("LUCK_ASKPASS");
-    if (prog == NULL)
-        goto error;
+    if (prog == NULL) {
+        // try using readpassphrase
+        if (readpassphrase("luck password: ", buf, bufsize, RPP_REQUIRE_TTY) == NULL)
+            goto error;
+        return 0;
+    }
 
     FILE *fp = popen(prog, "r");
     if (fp == NULL)
         goto error;
 
-    size_t n = fread(buf, 1, bufsize, fp);
+    (void) fread(buf, 1, bufsize - 1, fp);
+    if (ferror(fp)) goto error;
     if (pclose(fp) != 0)
         goto error;
 
-    *password_size = n;
+    buf[bufsize-1] = '\0';
+    buf[strcspn(buf, "\r\n")] = '\0';
     rv = 0;
 error:
     return rv;
@@ -539,8 +546,9 @@ int main(int argc, char** argv)
     if (expect_key_or_password && key_fp == NULL && !askpass)
         __ERROR("expected key or password");
     if (expect_key_or_password && askpass) {
-        if (pdkf_askpass(password, sizeof(password), &password_size) != 0)
+        if (pdkf_askpass((char *) password, sizeof(password)) != 0)
             __ERROR("askpass failed");
+        password_size = strlen((char *) password);
     }
 
     switch (action) {

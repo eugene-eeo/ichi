@@ -14,7 +14,7 @@ full: clean all tests
 kurv: kurv.o base64/base64.o monocypher/monocypher.o utils.o
 	$(CC) -o $@ $^
 
-luck: luck.o monocypher/monocypher.o utils.o
+luck: luck.o monocypher/monocypher.o utils.o readpassphrase.o
 	$(CC) -o $@ $^
 
 b64: b64.o utils.o monocypher/monocypher.o base64/base64.o
