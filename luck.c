@@ -14,6 +14,9 @@
 #define WIPE_CTX(ctx)     crypto_wipe(ctx, sizeof(*(ctx)))
 #define WIPE_BUF(buffer)  crypto_wipe(buffer, sizeof(buffer))
 
+#define PDKF_MCOST 100000
+#define PDKF_TCOST 3
+
 static const char* SEE_HELP = "invalid usage: see luck -h";
 static const char* HELP =
     "usage: luck -h\n"
@@ -322,8 +325,8 @@ int encrypt(FILE* fp, FILE* key_fp, char* password)
         __CHECK_WRITE(_write(stdout, eph_pk, sizeof(eph_pk)));
     } else {
         // use eph_sk as salt
-        pdkf_encode_params(pdkf_out, 100000, 3, eph_sk, 32);
-        pdkf_key(shared_key, 100000, 3,
+        pdkf_encode_params(pdkf_out, PDKF_MCOST, PDKF_TCOST, eph_sk, 32);
+        pdkf_key(shared_key, PDKF_MCOST, PDKF_TCOST,
                  (uint8_t *) password, strlen(password),
                  eph_sk, 32);
 
@@ -416,6 +419,8 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
             {
                 __CHECK_READ(  _read(fp, raw_buf, 18));
                 __CHECK_UNLOCK(ls_unlock_length(&length, nonce, shared_key, raw_buf));
+                if (length == 0 || length > 4096)
+                    __ERROR("bad encryption");
                 __CHECK_READ(  _read(fp, raw_buf, length + 16));
                 __CHECK_UNLOCK(ls_unlock_payload(dec_buf, nonce, shared_key, raw_buf, length));
                 __CHECK_WRITE( _write(stdout, dec_buf, length));
