@@ -14,11 +14,10 @@
 #define ERR(...)       _err("luck", __VA_ARGS__)
 #define WIPE_CTX(ctx)  crypto_wipe((ctx), sizeof(*(ctx)))
 #define WIPE_BUF(buf)  crypto_wipe((buf), sizeof(buf))
-#define MIN(a, b)      ((a) > (b) ? (b) : (a))
 
 #define PDKF_BUFSIZE 256
-#define PDKF_MCOST 100000
-#define PDKF_TCOST 3
+#define PDKF_MCOST   100000
+#define PDKF_TCOST   3
 
 static const char* SEE_HELP = "invalid usage: see luck -h";
 static const char* HELP =
@@ -214,22 +213,22 @@ int generate_keypair(char *base)
 
     // Secret key
     memcpy(fn, base, len);
-    memcpy(fn + len, ".sk", 3);
+    memcpy(fn + len, ".sk", 4);
     fp = fopen(fn, "w");
     if (fp == NULL
-            || fwrite(sk, 1, sizeof(sk), fp) != sizeof(sk)
-            || fwrite("\n", 1, 1, fp) != 1
+            || _write(fp, sk, sizeof(sk)) != 0
+            || _write(fp, (uint8_t *)"\n", 1) != 0
             || _fclose(&fp) != 0) {
         ERR("cannot write secret key in '%s'", fn);
         goto error_2;
     }
 
     // Public key
-    memcpy(fn + len, ".pk", 3);
+    memcpy(fn + len, ".pk", 4);
     fp = fopen(fn, "w");
     if (fp == NULL
-            || fwrite(pk, 1, sizeof(pk), fp) != sizeof(pk)
-            || fwrite("\n", 1, 1, fp) != 1
+            || _write(fp, pk, sizeof(pk)) != 0
+            || _write(fp, (uint8_t *)"\n", 1) != 0
             || _fclose(&fp) != 0) {
         ERR("cannot write public key in '%s'", fn);
         goto error_2;
