@@ -13,7 +13,9 @@
 #define ERR(...)          _err("luck", __VA_ARGS__)
 #define WIPE_CTX(ctx)     crypto_wipe(ctx, sizeof(*(ctx)))
 #define WIPE_BUF(buffer)  crypto_wipe(buffer, sizeof(buffer))
+#define MIN(a, b)         ((a) > (b) ? (b) : (a))
 
+#define PDKF_BUFSIZE 256
 #define PDKF_MCOST 100000
 #define PDKF_TCOST 3
 
@@ -22,7 +24,7 @@ static const char* HELP =
     "usage: luck -h\n"
     "       luck -g <base>\n"
     "       luck -w -k <key>\n"
-    "       luck {-e|-d} {-k <key> | -p <password>} [FILE]\n\n"
+    "       luck {-e|-d} {-k <key> | -p <password> | -a <cmd>} [FILE]\n\n"
     "FILE defaults to stdin if no FILE is specified.\n\n"
     "options:\n"
     "  -h         show help.\n"
@@ -33,6 +35,7 @@ static const char* HELP =
     "  -d         decrypt FILE, similar to -e.\n"
     "  -p <password>\n"
     "             specify password.\n"
+    "  -a <cmd>   specify an askpass program for password instead.\n"
     "examples:\n"
     "  -ek id.pk  encrypts the stream, can only be opened by 'id.sk'.\n"
     "  -dk id.sk  decrypts the above.\n"
@@ -47,8 +50,8 @@ static const uint8_t HEAD_DIGEST = '$';
 
 int generate_keypair(char *base);
 int write_pubkey(FILE *key_fp);
-int encrypt(FILE *fp, FILE *key_fp, char *password);
-int decrypt(FILE *fp, FILE *key_fp, char *password);
+int encrypt(FILE *fp, FILE *key_fp, uint8_t *password, size_t password_size);
+int decrypt(FILE *fp, FILE *key_fp, uint8_t *password, size_t password_size);
 
 //
 // Lock Stream
@@ -160,6 +163,26 @@ int pdkf_key(uint8_t *key,
                    salt, salt_size);
     free(work_area);
     return 0;
+}
+
+//
+// PDKF Askpass support
+//
+int pdkf_askpass(char* askpass, uint8_t* buf, size_t bufsize, size_t *password_size)
+{
+    int rv = 1;
+    FILE *fp = popen(askpass, "r");
+    if (fp == NULL)
+        goto error;
+
+    size_t n = fread(buf, 1, bufsize, fp);
+    if (pclose(fp) != 0)
+        goto error;
+
+    *password_size = n;
+    rv = 0;
+error:
+    return rv;
 }
 
 int generate_keypair(char *base)
@@ -299,7 +322,7 @@ error:
 #undef __CHECK_WRITE
 }
 
-int encrypt(FILE* fp, FILE* key_fp, char* password)
+int encrypt(FILE* fp, FILE* key_fp, uint8_t* password, size_t password_size)
 {
 #define __ERROR(m)       { ERR(m); goto error; }
 #define __CHECK_WRITE(x) { if ((x) != 0) __ERROR("cannot write"); }
@@ -327,7 +350,7 @@ int encrypt(FILE* fp, FILE* key_fp, char* password)
         // use eph_sk as salt
         pdkf_encode_params(pdkf_out, PDKF_MCOST, PDKF_TCOST, eph_sk, 32);
         pdkf_key(shared_key, PDKF_MCOST, PDKF_TCOST,
-                 (uint8_t *) password, strlen(password),
+                 password, password_size,
                  eph_sk, 32);
 
         __CHECK_WRITE(_write(stdout, &HEAD_PDKF, 1));
@@ -348,7 +371,7 @@ error:
 #undef __CHECK_WRITE
 }
 
-int decrypt(FILE* fp, FILE* key_fp, char* password)
+int decrypt(FILE* fp, FILE* key_fp, uint8_t* password, size_t password_size)
 {
 #define __ERROR(m)        { ERR(m); goto error; }
 #define __CHECK_WRITE(x)  { if ((x) != 0) __ERROR("cannot write"); }
@@ -391,7 +414,7 @@ int decrypt(FILE* fp, FILE* key_fp, char* password)
             __CHECK_READ(_read(fp, pdkf_salt, salt_size));
             pdkf_key(shared_key,
                      nb_blocks, nb_iterations,
-                     (uint8_t *) password, strlen(password),
+                     password, password_size,
                      pdkf_salt, salt_size);
             break;
         }
@@ -454,6 +477,7 @@ error:
     WIPE_BUF(eph_pk);
     WIPE_BUF(sk);
     WIPE_BUF(shared_key);
+    WIPE_BUF(digest);
     return rv;
 
 #undef __ERROR
@@ -471,14 +495,18 @@ int main(int argc, char** argv)
     FILE* fp     = NULL;
     FILE* key_fp = NULL;
     char* base = NULL;
-    char* password = NULL;
+
+    uint8_t password_given = 0;
+    uint8_t password[PDKF_BUFSIZE];
+    size_t password_size;
+
     int action = 0;
     int c;
     int expect_fp  = 0;
     int expect_key = 0;
     int expect_key_or_password = 0;
 
-    while ((c = getopt(argc, argv, "hg:wedk:p:")) != -1)
+    while ((c = getopt(argc, argv, "hg:wedk:p:a:")) != -1)
         switch (c) {
             default: ERR("%s", SEE_HELP); goto out;
             case 'h':
@@ -489,7 +517,16 @@ int main(int argc, char** argv)
             case 'w': __SETACTION('w'); expect_key = 1; break;
             case 'e': __SETACTION('e'); expect_fp = 1; expect_key_or_password = 1; break;
             case 'd': __SETACTION('d'); expect_fp = 1; expect_key_or_password = 1; break;
-            case 'p': password = optarg; break;
+            case 'p':
+                password_size = MIN(strlen(optarg), sizeof(password));
+                password_given = 1;
+                memcpy(password, optarg, password_size);
+                break;
+            case 'a':
+                if (pdkf_askpass(optarg, password, sizeof(password), &password_size) != 0)
+                    __ERROR("askpass failed");
+                password_given = 1;
+                break;
             case 'k':
                 key_fp = fopen(optarg, "r");
                 if (key_fp == NULL)
@@ -497,9 +534,9 @@ int main(int argc, char** argv)
                 break;
         }
 
-    if (key_fp != NULL && password != NULL) __ERROR("can only specify one of password or key");
-    if (expect_key && key_fp == NULL)       __ERROR("no key specified");
-    if (!expect_fp && argc > optind)        __ERROR("%s", SEE_HELP);
+    if (key_fp != NULL && password_given) __ERROR("can only specify one of password or key");
+    if (expect_key && key_fp == NULL)     __ERROR("no key specified");
+    if (!expect_fp && argc > optind)      __ERROR("%s", SEE_HELP);
     if (expect_fp) {
         if (argc == optind + 1) {
             fp = fopen(argv[optind], "r");
@@ -511,20 +548,19 @@ int main(int argc, char** argv)
             __ERROR("%s", SEE_HELP);
         }
     }
-    if (expect_key_or_password && key_fp == NULL && password == NULL)
+    if (expect_key_or_password && key_fp == NULL && !password_given)
         __ERROR("expected key or password");
 
     switch (action) {
         default:  __ERROR("%s", SEE_HELP);     break;
         case 'g': rv = generate_keypair(base); break;
         case 'w': rv = write_pubkey(key_fp);   break;
-        case 'e': rv = encrypt(fp, key_fp, password); break;
-        case 'd': rv = decrypt(fp, key_fp, password); break;
+        case 'e': rv = encrypt(fp, key_fp, password, password_size); break;
+        case 'd': rv = decrypt(fp, key_fp, password, password_size); break;
     }
 
 out:
-    if (password != NULL)
-        crypto_wipe(password, strlen(password));
+    WIPE_BUF(password);
     if (fp     != NULL) fclose(fp);
     if (key_fp != NULL) fclose(key_fp);
     if (fclose(stdout) != 0) {

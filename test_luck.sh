@@ -62,3 +62,13 @@ setup() {
     [ "$status" = 0 ]
     [ "$output" = "$(cat README.md)" ]
 }
+
+@test 'askpass' {
+    run luck -ea 'false' README.md
+    [ "$status" != 0 ]
+
+    luck -ea 'echo 1' README.md > test/enc
+    run luck -da 'echo 1' test/enc
+    [ "$status" = 0 ]
+    [ "$output" = "$(cat README.md)" ]
+}
