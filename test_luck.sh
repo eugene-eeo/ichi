@@ -7,54 +7,58 @@ setup() {
 }
 
 @test 'id generation' {
-    run luck -g test/id
+    run luck -G test/id
     [ "$status" = 0 ]
     [ -f 'test/id.sk' ]
     [ -f 'test/id.pk' ]
 }
 
-@test 'print public key' {
-    luck -g test/id
-    run luck -wk test/id.sk
-    [ "$status" = 0 ]
-    [ "$output" = "$(cat test/id.pk)" ]
-}
-
 @test 'encrypt + decrypt' {
-    luck -g test/id
-    luck -ek test/id.pk monocypher/monocypher.c > test/enc
-    run luck -dk test/id.sk test/enc
-    [ "$status" = 0 ]
-    [ "$output" = "$(cat monocypher/monocypher.c)" ]
+    luck -G test/id
+    luck -Ek test/id.pk monocypher/monocypher.c > test/enc
+    luck -Dk test/id.sk test/enc > test/dec
+    [ "$(cat test/dec)" = "$(cat monocypher/monocypher.c)" ]
 
     # decrypt with stream cutoff
-    run luck -dk test/id.sk <(head -c 200 test/enc)
+    run luck -Dk test/id.sk <(head -c 200 test/enc)
     [ "$status" != 0 ]
 
     # decrypt with invalid id
-    luck -g test/eve
-    run luck -dk test/eve.sk test/enc
+    luck -G test/eve
+    run luck -Dk test/eve.sk test/enc
     [ "$status" != 0 ]
 }
 
 @test 'nested encryption' {
-    luck -g test/id1
-    luck -g test/id2
-    luck -ek test/id1.pk monocypher/monocypher.c \
-        | luck -ek test/id2.pk \
+    luck -G test/id1
+    luck -G test/id2
+    luck -Ek test/id1.pk monocypher/monocypher.c \
+        | luck -Ek test/id2.pk \
         > test/enc
-    luck -dk test/id2.sk test/enc > test/dec
-    run luck -dk test/id1.sk test/dec
+    luck -Dk test/id2.sk test/enc > test/dec
+    run luck -Dk test/id1.sk test/dec
     [ "$status" = 0 ]
     [ "$output" = "$(cat monocypher/monocypher.c)" ]
 }
 
-@test 'password encryption' {
+@test 'password encryption (password)' {
+    luck -Ep 123 README.md > test/enc
+    luck -Dp 123 test/enc > test/dec
+    [ "$(cat test/dec)" = "$(cat README.md)" ]
+
+    run luck -Dp 12 test/enc
+    [ "$status" != 0 ]
+}
+
+@test 'password encryption (askpass)' {
     # bad askpass output
-    LUCK_ASKPASS='false' run luck -ep README.md
+    LUCK_ASKPASS='false' run luck -Ea README.md
     [ "$status" != 0 ]
 
-    LUCK_ASKPASS='echo abcdef' luck -ep README.md > test/enc
-    LUCK_ASKPASS='echo abcdef' luck -dp test/enc > test/dec
+    LUCK_ASKPASS='echo abcdef' luck -Ea README.md > test/enc
+    LUCK_ASKPASS='echo abcdef' luck -Da test/enc > test/dec
     [ "$(cat test/dec)" = "$(cat README.md)" ]
+
+    run LUCK_ASKPASS='echo abc' luck -Da test/enc
+    [ "$status" != 0 ]
 }
