@@ -11,10 +11,10 @@
 #include "readpassphrase.h"
 #include "utils.h"
 
-#define ERR(...)          _err("luck", __VA_ARGS__)
-#define WIPE_CTX(ctx)     crypto_wipe(ctx, sizeof(*(ctx)))
-#define WIPE_BUF(buffer)  crypto_wipe(buffer, sizeof(buffer))
-#define MIN(a, b)         ((a) > (b) ? (b) : (a))
+#define ERR(...)       _err("luck", __VA_ARGS__)
+#define WIPE_CTX(ctx)  crypto_wipe((ctx), sizeof(*(ctx)))
+#define WIPE_BUF(buf)  crypto_wipe((buf), sizeof(buf))
+#define MIN(a, b)      ((a) > (b) ? (b) : (a))
 
 #define PDKF_BUFSIZE 256
 #define PDKF_MCOST 100000
@@ -501,7 +501,7 @@ int main(int argc, char** argv)
     char* base = NULL;
 
     uint8_t password[PDKF_BUFSIZE];
-    size_t password_size;
+    size_t password_size = 0;
     int askpass = 0;
 
     int action = 0;
