@@ -24,24 +24,19 @@ static const char* HELP =
     "usage: luck -h\n"
     "       luck -g <base>\n"
     "       luck -w -k <key>\n"
-    "       luck {-e|-d} {-k <key> | -p <password> | -a <cmd>} [FILE]\n\n"
+    "       luck {-e|-d} {-k <key> | -p} [FILE]\n\n"
     "FILE defaults to stdin if no FILE is specified.\n\n"
     "options:\n"
     "  -h         show help.\n"
     "  -g <base>  generate keypair in <key>.sk (secret) and <key>.pk (public).\n"
-    "  -k <key>   specify secret/public key file <key>.\n"
+    "  -k <key>   specify secret/public key file.\n"
     "  -w         print public key for secret key <key>.\n"
     "  -e         encrypt FILE, using key-exchange or password mode.\n"
     "  -d         decrypt FILE, similar to -e.\n"
-    "  -p <password>\n"
-    "             specify password.\n"
-    "  -a <cmd>   specify an askpass program for password instead.\n"
+    "  -p         use $LUCK_ASKPASS to ask for password.\n"
     "examples:\n"
     "  -ek id.pk  encrypts the stream, can only be opened by 'id.sk'.\n"
-    "  -dk id.sk  decrypts the above.\n"
-    "  -ep 'pwd'  encrypts the stream, opened by knowing password 'pwd'.\n"
-    "  -dp 'pwd'  decrypts the above.\n\n"
-    ;
+    "  -dk id.sk  decrypts the above.\n";
 
 static const uint8_t HEAD_PUBKEY = '@';
 static const uint8_t HEAD_PDKF   = '#';
@@ -168,10 +163,14 @@ int pdkf_key(uint8_t *key,
 //
 // PDKF Askpass support
 //
-int pdkf_askpass(char* askpass, uint8_t* buf, size_t bufsize, size_t *password_size)
+int pdkf_askpass(uint8_t* buf, size_t bufsize, size_t *password_size)
 {
     int rv = 1;
-    FILE *fp = popen(askpass, "r");
+    char *prog = getenv("LUCK_ASKPASS");
+    if (prog == NULL)
+        goto error;
+
+    FILE *fp = popen(prog, "r");
     if (fp == NULL)
         goto error;
 
@@ -404,8 +403,6 @@ int decrypt(FILE* fp, FILE* key_fp, uint8_t* password, size_t password_size)
         default: __ERROR("bad encryption");
         case HEAD_PDKF:
         {
-            if (password == NULL)
-                __ERROR("no password specified");
             size_t nb_blocks,
                    nb_iterations,
                    salt_size;
@@ -496,9 +493,9 @@ int main(int argc, char** argv)
     FILE* key_fp = NULL;
     char* base = NULL;
 
-    uint8_t password_given = 0;
     uint8_t password[PDKF_BUFSIZE];
     size_t password_size;
+    int askpass = 0;
 
     int action = 0;
     int c;
@@ -506,7 +503,7 @@ int main(int argc, char** argv)
     int expect_key = 0;
     int expect_key_or_password = 0;
 
-    while ((c = getopt(argc, argv, "hg:wedk:p:a:")) != -1)
+    while ((c = getopt(argc, argv, "hg:wedk:p")) != -1)
         switch (c) {
             default: ERR("%s", SEE_HELP); goto out;
             case 'h':
@@ -517,16 +514,7 @@ int main(int argc, char** argv)
             case 'w': __SETACTION('w'); expect_key = 1; break;
             case 'e': __SETACTION('e'); expect_fp = 1; expect_key_or_password = 1; break;
             case 'd': __SETACTION('d'); expect_fp = 1; expect_key_or_password = 1; break;
-            case 'p':
-                password_size = MIN(strlen(optarg), sizeof(password));
-                password_given = 1;
-                memcpy(password, optarg, password_size);
-                break;
-            case 'a':
-                if (pdkf_askpass(optarg, password, sizeof(password), &password_size) != 0)
-                    __ERROR("askpass failed");
-                password_given = 1;
-                break;
+            case 'p': askpass = 1; break;
             case 'k':
                 key_fp = fopen(optarg, "r");
                 if (key_fp == NULL)
@@ -534,9 +522,9 @@ int main(int argc, char** argv)
                 break;
         }
 
-    if (key_fp != NULL && password_given) __ERROR("can only specify one of password or key");
-    if (expect_key && key_fp == NULL)     __ERROR("no key specified");
-    if (!expect_fp && argc > optind)      __ERROR("%s", SEE_HELP);
+    if (key_fp != NULL && askpass)    __ERROR("can only specify one of password or key");
+    if (expect_key && key_fp == NULL) __ERROR("no key specified");
+    if (!expect_fp && argc > optind)  __ERROR("%s", SEE_HELP);
     if (expect_fp) {
         if (argc == optind + 1) {
             fp = fopen(argv[optind], "r");
@@ -548,8 +536,12 @@ int main(int argc, char** argv)
             __ERROR("%s", SEE_HELP);
         }
     }
-    if (expect_key_or_password && key_fp == NULL && !password_given)
+    if (expect_key_or_password && key_fp == NULL && !askpass)
         __ERROR("expected key or password");
+    if (expect_key_or_password && askpass) {
+        if (pdkf_askpass(password, sizeof(password), &password_size) != 0)
+            __ERROR("askpass failed");
+    }
 
     switch (action) {
         default:  __ERROR("%s", SEE_HELP);     break;

@@ -50,25 +50,15 @@ setup() {
 }
 
 @test 'password encryption' {
-    luck -g test/id
-
-    luck -ek test/id.pk README.md > test/enc-pubkey
-    luck -ep password   README.md > test/enc-pdkf
-
-    run luck -dp password test/enc-pubkey
+    # no askpass
+    run luck -ep README.md
     [ "$status" != 0 ]
 
-    run luck -dp password test/enc-pdkf
-    [ "$status" = 0 ]
-    [ "$output" = "$(cat README.md)" ]
-}
-
-@test 'askpass' {
-    run luck -ea 'false' README.md
+    # bad askpass output
+    LUCK_ASKPASS='false' run luck -ep README.md
     [ "$status" != 0 ]
 
-    luck -ea 'echo 1' README.md > test/enc
-    run luck -da 'echo 1' test/enc
-    [ "$status" = 0 ]
-    [ "$output" = "$(cat README.md)" ]
+    LUCK_ASKPASS='echo abcdef' luck -ep README.md > test/enc
+    LUCK_ASKPASS='echo abcdef' luck -dp test/enc > test/dec
+    [ "$(cat test/dec)" = "$(cat README.md)" ]
 }

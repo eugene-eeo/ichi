@@ -37,8 +37,9 @@ $ echo "Hello" \
    | luck -ek id.pk \  # encrypt for recepient
    | luck -dk id.sk    # decrypt
 Hello
+$ export LUCK_ASKPASS='zenity --password'
 $ echo "World" \
-   | luck -ep "password" \ # with password
-   | luck -dp "password"
+   | luck -ep \ # with password
+   | luck -dp
 World
 ```
