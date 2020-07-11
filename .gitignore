@@ -1,9 +1,6 @@
-/kurv
-/luck
-/b64
+/ichi-keygen
+/ichi-lock
 *.o
 /test/
-/id.priv
-/id.pub
-/id.sk
-/id.pk
+*.key
+*.pub

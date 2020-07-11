@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <sys/random.h>
 #include "monocypher/monocypher.h"
 
 void _free(void* buf, int bufsize)
@@ -26,4 +27,9 @@ int _read(FILE* fp, uint8_t *buf, size_t bufsize)
 int _write(FILE* fp, const uint8_t *buf, size_t bufsize)
 {
     return fwrite(buf, 1, bufsize, fp) == bufsize ? 0 : -1;
+}
+
+int _random(uint8_t *buf, size_t bufsize)
+{
+    return getrandom(buf, bufsize, 0) == -1 ? -1 : 0;
 }
