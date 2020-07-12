@@ -14,7 +14,7 @@ full: clean all tests
 ichi-keygen: ichi-keygen.o base64/base64.o monocypher/monocypher.o utils.o
 	$(CC) -o $@ $^
 
-ichi-lock: ichi-lock.o base64/base64.o monocypher/monocypher.o utils.o
+ichi-lock: ichi-lock.o base64/base64.o monocypher/monocypher.o utils.o lock_stream.o
 	$(CC) -o $@ $^
 
 clean:
