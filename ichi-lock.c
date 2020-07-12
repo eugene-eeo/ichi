@@ -273,12 +273,12 @@ static int decrypt(FILE* fp,
        key_mode [1];
     size_t length;
 
-    size_t buf_size = READ_SIZE + 1 + 16,
-           dec_size = READ_SIZE + 1;
-    u8 *buf = malloc(buf_size),
-       *dec = malloc(dec_size);
+    size_t ct_size = READ_SIZE + 1 + 16,
+           pt_size = READ_SIZE + 1;
+    u8 *ct = malloc(ct_size),
+       *pt = malloc(pt_size);
 
-    XCHECK(buf != NULL && dec != NULL, "malloc");
+    XCHECK(ct != NULL && pt != NULL, "malloc");
     XREAD(fp, nonce, 24);
     XREAD(fp, key_mode, 1);
 
@@ -298,37 +298,34 @@ static int decrypt(FILE* fp,
             break;
     }
 
-    // begin decrypt
+    // begin ptrypt
     crypto_blake2b_ctx ctx;
     crypto_blake2b_general_init(&ctx, 64, enc_key, 32);
 
     while (1) {
-        XREAD(fp, buf, 16 + 2);
-        XCHECK(ls_unlock_length(&length, nonce, enc_key, buf) == 0,
+        XREAD(fp, ct, 16 + 2);
+        XCHECK(ls_unlock_length(&length, nonce, enc_key, ct) == 0,
                "bad encryption: cannot unlock");
         XCHECK(length >= 1,             "bad encryption");
         XCHECK(length <= READ_SIZE + 1, "bad encryption");
-        XREAD(fp, buf, 16 + length);
-        XCHECK(ls_unlock_payload(dec, nonce, enc_key, buf, length) == 0,
+        XREAD(fp, ct, 16 + length);
+        XCHECK(ls_unlock_payload(pt, nonce, enc_key, ct, length) == 0,
                "bad encryption: cannot unlock");
 
-        u8 *pt = dec + 1;
-        length--;
-
-        switch (dec[0]) {
+        switch (pt[0]) {
         default:
             ERR("bad encryption");
             goto error;
         case HEAD_BLOCK:
-            crypto_blake2b_update(&ctx, pt, length);
-            XWRITE(stdout, pt, length);
+            crypto_blake2b_update(&ctx, pt + 1, length - 1);
+            XWRITE(stdout, pt + 1, length - 1);
             break;
         case HEAD_DIGEST:
-            XCHECK(length == 64, "bad encryption");
+            XCHECK(length == 65, "bad encryption");
             crypto_blake2b_final(&ctx, digest);
-            XCHECK(crypto_verify64(digest, pt) == 0, "invalid digest");
+            XCHECK(crypto_verify64(digest, pt + 1) == 0, "invalid digest");
             // do 1 extra read and expect an EOF
-            XCHECK(fread(buf, 1, 1, fp) == 0 && feof(fp), "expected EOF");
+            XCHECK(fread(ct, 1, 1, fp) == 0 && feof(fp), "expected EOF");
             rv = 0;
             goto error;
         }
@@ -336,8 +333,8 @@ static int decrypt(FILE* fp,
 
 error:
     length = 0;
-    _free(buf, buf_size);
-    _free(dec, dec_size);
+    _free(ct, ct_size);
+    _free(pt, pt_size);
     WIPE_BUF(enc_key);
     return rv;
 }
