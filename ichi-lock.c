@@ -155,9 +155,6 @@ static int encrypt_pdkf(FILE* fp, const u8* password, size_t password_size)
     rv = encrypt_lockstream(fp, enc_key, nonce);
 
 error:
-    WIPE_BUF(nonce);
-    WIPE_BUF(salt);
-    WIPE_BUF(pdkf_params);
     WIPE_BUF(enc_key);
     return rv;
 }
@@ -193,11 +190,7 @@ static int encrypt_pubkey(FILE* fp, const u8* sk, struct recepients rs)
     rv = encrypt_lockstream(fp, enc_key, nonce);
 
 error:
-    WIPE_BUF(nonce);
     WIPE_BUF(enc_key);
-    WIPE_BUF(pk);
-    WIPE_BUF(nrecp);
-    WIPE_BUF(kx_ct);
     return rv;
 }
 
@@ -238,10 +231,8 @@ static int decrypt_pubkey_block(FILE* fp,
     rv = 0;
 
 error:
-    WIPE_BUF(kx_ct);
     WIPE_BUF(shared_key);
     WIPE_BUF(sender_pk);
-    WIPE_BUF(nrecp_u8);
     return rv;
 }
 
@@ -268,8 +259,6 @@ static int decrypt_pdkf_block(FILE* fp,
     rv = 0;
 
 error:
-    WIPE_BUF(params_buf);
-    WIPE_BUF(salt);
     return rv;
 }
 
@@ -278,10 +267,10 @@ static int decrypt(FILE* fp,
                    const u8* password, size_t password_size)
 {
     int rv = 1;
-    u8 nonce   [24],
-       enc_key [32],
-       digest  [64],
-       head;
+    u8 nonce    [24],
+       enc_key  [32],
+       digest   [64],
+       key_mode [1];
     size_t length;
 
     size_t buf_size = READ_SIZE + 1 + 16,
@@ -291,10 +280,9 @@ static int decrypt(FILE* fp,
 
     XCHECK(buf != NULL && dec != NULL, "malloc");
     XREAD(fp, nonce, 24);
-    XREAD(fp, &head, 1);
+    XREAD(fp, key_mode, 1);
 
-    // pubkey mode
-    switch(head) {
+    switch(key_mode[0]) {
         default:
             ERR("bad encryption");
             goto error;
@@ -312,7 +300,7 @@ static int decrypt(FILE* fp,
 
     // begin decrypt
     crypto_blake2b_ctx ctx;
-    crypto_blake2b_general_init(&ctx, sizeof(digest), enc_key, sizeof(enc_key));
+    crypto_blake2b_general_init(&ctx, 64, enc_key, 32);
 
     while (1) {
         XREAD(fp, buf, 16 + 2);
@@ -347,13 +335,10 @@ static int decrypt(FILE* fp,
     }
 
 error:
-    head = 0;
     length = 0;
     _free(buf, buf_size);
     _free(dec, dec_size);
-    WIPE_BUF(nonce);
     WIPE_BUF(enc_key);
-    WIPE_BUF(digest);
     return rv;
 }
 
