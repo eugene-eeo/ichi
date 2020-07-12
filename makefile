@@ -14,12 +14,15 @@ full: clean all tests
 ichi-keygen: ichi-keygen.o base64/base64.o monocypher/monocypher.o utils.o
 	$(CC) -o $@ $^
 
-ichi-lock: ichi-lock.o base64/base64.o monocypher/monocypher.o utils.o lock_stream.o
+ichi-lock: ichi-lock.o base64/base64.o \
+			monocypher/monocypher.o utils.o lock_stream.o \
+			readpassphrase.o
 	$(CC) -o $@ $^
 
 clean:
 	-rm *.o */*.o
 	-rm -rf test
+	-rm ichi-lock ichi-keygen
 
 tests:
 	echo ok

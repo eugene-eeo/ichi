@@ -8,6 +8,7 @@
 #include "monocypher/monocypher.h"
 #include "utils.h"
 #include "lock_stream.h"
+#include "readpassphrase.h"
 
 // +------------+-----------------------------+---------------------------+-------------------------------------+
 // | nonce (24) | @ + pubkey (32) + nrecp (1) | mac + enckey (48 * nrecp) | mac + length + mac + enc (34 + ...) |
@@ -29,19 +30,19 @@ static const char *HELP =
     "options:\n"
     "  -E        encrypt INPUT into OUTPUT.\n"
     "  -D        decrypt INPUT into OUTPUT.\n"
-    "  -i KEY    use private key file at path KEY.\n"
+    "  -k KEY    use secret key file at path KEY.\n"
     "  -r RECP   with -E, specify recepient public key RECP (base64).\n"
     "            can be repeated.\n"
     "  -R FILE   same as -r, but use key at path FILE instead.\n"
     "  -o OUTPUT set OUTPUT stream.\n"
     "  -p PASS   use password file at path PASS.\n"
+    "  -a        specify password interactively.\n"
     "  -v SENDER with -D, verify that SENDER produced the encryption.\n"
     "  -V FILE   same as -v, but use key at path FILE instead.\n"
     "\n"
     "INPUT defaults to stdin, and OUTPUT defaults to stdout.\n"
     "\n"
-    "RECP and SENDER should be a base64 string produced by `ichi-keygen`.\n\n"
-    ;
+    "RECP and SENDER should be a base64 string produced by `ichi-keygen`.\n\n";
 
 #define WIPE_BUF(buf)    crypto_wipe((buf), sizeof(buf))
 #define WIPE_CTX(ctx)    crypto_wipe((ctx), sizeof(*(ctx)))
@@ -63,35 +64,6 @@ struct ls_pdkf_params pdkf_standard_params = {
     .nb_iterations = 3,
     .salt_size = 32,
 };
-
-int decode_key(u8* out, const u8* buf, size_t bufsize)
-{
-    int rv = 1;
-    if (b64_decoded_size(buf, bufsize) == 32
-            && b64_validate(buf, bufsize) == 0) {
-        b64_decode(out, buf, bufsize);
-        rv = 0;
-    }
-    return rv;
-}
-
-int read_key(FILE* fp, u8* buf)
-{
-    int rv = 1;
-    u8 b64_buf[B64_KEY_SIZE];
-    if (_read(fp, b64_buf, sizeof(b64_buf)) != 0) {
-        ERR("cannot read private key");
-        goto error;
-    }
-    if (decode_key(buf, b64_buf, sizeof(b64_buf)) != 0) {
-        ERR("invalid private key")
-        goto error;
-    }
-    rv = 0;
-error:
-    WIPE_BUF(b64_buf);
-    return rv;
-}
 
 //
 // Encryption
@@ -381,8 +353,56 @@ error:
     return rv;
 }
 
+//
+// Helpers for main(...)
+//
+int decode_key(u8* out, const u8* buf, size_t bufsize)
+{
+    int rv = 1;
+    if (b64_decoded_size(buf, bufsize) == 32
+            && b64_validate(buf, bufsize) == 0) {
+        b64_decode(out, buf, bufsize);
+        rv = 0;
+    }
+    return rv;
+}
+
+int read_key(FILE* fp, u8* buf)
+{
+    int rv = 1;
+    u8 b64_buf[B64_KEY_SIZE];
+    if (_read(fp, b64_buf, sizeof(b64_buf)) != 0) {
+        ERR("cannot read private key");
+        goto error;
+    }
+    if (decode_key(buf, b64_buf, sizeof(b64_buf)) != 0) {
+        ERR("invalid private key")
+        goto error;
+    }
+    rv = 0;
+error:
+    WIPE_BUF(b64_buf);
+    return rv;
+}
+
+int askpass(u8* password, size_t bufsize, size_t* password_size)
+{
+    char* ptr = readpassphrase("ichi-lock: password: ",
+                               (char *) password, bufsize,
+                               RPP_ECHO_OFF | RPP_REQUIRE_TTY);
+    if (ptr == NULL)
+        return -1;
+    *password_size = strlen((char *) password);
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
+    #define XOPEN(fn) {\
+        tmp_fp = fopen(fn, "r");\
+        XCHECK(tmp_fp != NULL, "fopen '%s'", fn);\
+    }
+
     int rv = 1;
     struct recepients rcs;
     rcs.recp = NULL;
@@ -403,7 +423,7 @@ int main(int argc, char** argv)
         action = 0;
 
     int c = 0;
-    while ((c = getopt(argc, argv, "hEDR:r:k:V:v:p:o:")) != -1) {
+    while ((c = getopt(argc, argv, "hEDR:r:k:V:v:p:o:a")) != -1) {
         switch (c) {
         default: goto error;
         case 'h':
@@ -411,45 +431,49 @@ int main(int argc, char** argv)
             rv = 0;
             goto error;
         case 'R':
-            tmp_fp = fopen(optarg, "r");
-            XCHECK(tmp_fp != NULL && read_key(tmp_fp, recepient) == 0,
+            XOPEN(optarg);
+            XCHECK(read_key(tmp_fp, recepient) == 0,
                    "invalid recepient key file: %s", optarg);
+            _fclose(&tmp_fp);
             if (add_recepient(&rcs, recepient) != 0)
                 goto error;
-            _fclose(&tmp_fp);
             break;
         case 'r':
             XCHECK(decode_key(recepient, (u8 *) optarg, strcspn(optarg, "\r\n")) == 0,
-                   "invalid recepient key");
+                   "invalid recepient key: %s", optarg);
             if (add_recepient(&rcs, recepient) != 0)
                 goto error;
             break;
         case 'k':
             kflag = 1;
-            tmp_fp = fopen(optarg, "r");
-            XCHECK(tmp_fp != NULL && read_key(tmp_fp, sk) == 0,
-                   "invalid private key file: %s", optarg);
+            XOPEN(optarg);
+            XCHECK(read_key(tmp_fp, sk) == 0,
+                   "invalid secret key file: %s", optarg);
             _fclose(&tmp_fp);
             break;
         case 'v':
             vflag = 1;
             XCHECK(decode_key(verify_sender, (u8 *) optarg, strlen(optarg)) == 0,
-                   "invalid public key for verify");
+                   "invalid public key: %s", optarg);
             break;
         case 'V':
             vflag = 1;
-            tmp_fp = fopen(optarg, "r");
-            XCHECK(tmp_fp != NULL && read_key(tmp_fp, verify_sender) == 0,
-                   "invalid public key for verify: %s", optarg);
-            if (add_recepient(&rcs, recepient) != 0)
-                goto error;
+            XOPEN(optarg);
+            XCHECK(read_key(tmp_fp, verify_sender) == 0,
+                   "invalid public key file: %s", optarg);
             _fclose(&tmp_fp);
+            break;
+        case 'a':
+            pflag = 1;
+            XCHECK(askpass(password, sizeof(password), &password_size) == 0,
+                   "askpass failed");
             break;
         case 'p':
             pflag = 1;
-            tmp_fp = fopen(optarg, "r");
-            XCHECK(tmp_fp != NULL, "cannot open password file: %s", optarg);
-            password_size = fread(password, 1, sizeof(password), tmp_fp);
+            XOPEN(optarg);
+            password_size = fread(password, 1, sizeof(password) - 1, tmp_fp);
+            password[password_size] = '\0';
+            password_size = strcspn((char *) password, "\r\n");
             XCHECK(!ferror(tmp_fp), "cannot read password file: %s", optarg);
             _fclose(&tmp_fp);
             break;
@@ -469,20 +493,22 @@ int main(int argc, char** argv)
         XCHECK(input_fp != NULL, "cannot open input file %s", argv[optind]);
     }
 
-    XCHECK(kflag || pflag, "at least one of password or key needs to be specified");
-    XCHECK(kflag ^  pflag, "cannot specify both -p and -k");
+    XCHECK(!(kflag && pflag), "cannot specify both -p and -k");
 
     switch (action) {
     case 'E':
         if (pflag) {
             rv = encrypt_pdkf(input_fp, password, password_size);
         } else {
-            XCHECK(kflag, "no key file specified");
+            /* XCHECK(kflag, "no key file specified"); */
             XCHECK(rcs.size > 0, "needs at least 1 recepient");
+            if (!kflag)
+                XCHECK(_random(sk, 32) == 0, "cannot generate ephemeral key");
             rv = encrypt_pubkey(input_fp, sk, rcs);
         }
         break;
     case 'D':
+        XCHECK(kflag || pflag, "at least one of password or key needs to be specified");
         rv = decrypt(input_fp,
                      kflag ? sk : NULL,
                      vflag ? verify_sender : NULL,
@@ -492,6 +518,7 @@ int main(int argc, char** argv)
     }
 
 error:
+    password_size = 0;
     WIPE_BUF(verify_sender);
     WIPE_BUF(sk);
     WIPE_BUF(password);
@@ -507,4 +534,6 @@ error:
     if (tmp_fp != NULL) fclose(tmp_fp);
     if (rcs.recp != NULL) free(rcs.recp);
     return rv;
+
+    #undef XOPEN
 }
