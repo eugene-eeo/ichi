@@ -77,6 +77,7 @@ int write_key(uint8_t pk[32],  uint8_t sk[32],
         ERR("cannot write secret key");
         goto error;
     }
+    rv = 0;
 
 error:
     if (fp != NULL) fclose(fp);

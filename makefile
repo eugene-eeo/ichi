@@ -24,8 +24,8 @@ clean:
 	-rm -rf test
 	-rm ichi-lock ichi-keygen
 
-tests:
-	echo ok
+tests: ichi-keygen ichi-lock
+	bats test_lock.sh
 
 # install: kurv luck
 # 	install -d $(DESTDIR)$(PREFIX)/bin/

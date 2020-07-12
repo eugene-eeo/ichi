@@ -54,10 +54,10 @@ static const char *HELP =
 
 typedef uint8_t u8;
 
-const u8 HEAD_PUBKEY = '@';
-const u8 HEAD_PDKF   = '#';
-const u8 HEAD_BLOCK  = 'B';
-const u8 HEAD_DIGEST = '$';
+static const u8 HEAD_PUBKEY = '@',
+                HEAD_PDKF   = '#',
+                HEAD_BLOCK  = 'B',
+                HEAD_DIGEST = '$';
 
 struct ls_pdkf_params pdkf_standard_params = {
     .nb_blocks = 100000,
@@ -69,7 +69,7 @@ struct ls_pdkf_params pdkf_standard_params = {
 // Encryption
 //
 // Write encrypted lock stream for fp
-int encrypt_lockstream(FILE* fp, const u8 enc_key[32], u8 nonce[24])
+static int encrypt_lockstream(FILE* fp, const u8 enc_key[32], u8 nonce[24])
 {
     int rv = 1;
     size_t pt_size = READ_SIZE + 1,
@@ -114,7 +114,7 @@ struct recepients {
     size_t size;
 };
 
-int add_recepient(struct recepients *rs, const u8* rcp_key)
+static int add_recepient(struct recepients *rs, const u8* rcp_key)
 {
     if (rs->size == 255) {
         ERR("cannot add more than 255 recepients");
@@ -133,7 +133,7 @@ int add_recepient(struct recepients *rs, const u8* rcp_key)
     return 0;
 }
 
-int encrypt_pdkf(FILE* fp, const u8* password, size_t password_size)
+static int encrypt_pdkf(FILE* fp, const u8* password, size_t password_size)
 {
     int rv = 1;
     u8 nonce       [24],
@@ -164,7 +164,7 @@ error:
     return rv;
 }
 
-int encrypt_pubkey(FILE* fp, const u8* sk, struct recepients rs)
+static int encrypt_pubkey(FILE* fp, const u8* sk, struct recepients rs)
 {
     int rv = 1;
     u8 nonce   [24],
@@ -206,10 +206,10 @@ error:
 //
 // Decryption
 //
-int decrypt_pubkey_block(FILE* fp,
-                         u8* enc_key,
-                         const u8* recp_sk,
-                         const u8* sender_to_verify)
+static int decrypt_pubkey_block(FILE* fp,
+                                u8* enc_key,
+                                const u8* recp_sk,
+                                const u8* sender_to_verify)
 {
     int rv = 1;
     size_t nrecp;
@@ -247,10 +247,10 @@ error:
     return rv;
 }
 
-int decrypt_pdkf_block(FILE* fp,
-                       u8* enc_key,
-                       const u8 *password,
-                       size_t password_size)
+static int decrypt_pdkf_block(FILE* fp,
+                              u8* enc_key,
+                              const u8 *password,
+                              size_t password_size)
 {
     int rv = 1;
     struct ls_pdkf_params params;
@@ -275,9 +275,9 @@ error:
     return rv;
 }
 
-int decrypt(FILE* fp,
-            const u8* sk, const u8* verify_sender,
-            const u8* password, size_t password_size)
+static int decrypt(FILE* fp,
+                   const u8* sk, const u8* verify_sender,
+                   const u8* password, size_t password_size)
 {
     int rv = 1;
     u8 nonce   [24],
@@ -297,6 +297,9 @@ int decrypt(FILE* fp,
 
     // pubkey mode
     switch(head) {
+        default:
+            ERR("bad encryption");
+            goto error;
         case HEAD_PUBKEY:
             XCHECK(sk != NULL, "no secret key given");
             if (decrypt_pubkey_block(fp, enc_key, sk, verify_sender) != 0)
@@ -314,7 +317,7 @@ int decrypt(FILE* fp,
     crypto_blake2b_general_init(&ctx, sizeof(digest), enc_key, sizeof(enc_key));
 
     while (1) {
-        XREAD(fp, buf, 18);
+        XREAD(fp, buf, 16 + 2);
         XCHECK(ls_unlock_length(&length, nonce, enc_key, buf) == 0,
                "bad encryption: cannot unlock");
         XCHECK(length >= 1,             "bad encryption");
@@ -327,18 +330,21 @@ int decrypt(FILE* fp,
         length--;
 
         switch (dec[0]) {
-            case HEAD_BLOCK:
-                crypto_blake2b_update(&ctx, pt, length);
-                XWRITE(stdout, pt, length);
-                break;
-            case HEAD_DIGEST:
-                XCHECK(length == 64, "bad encryption");
-                crypto_blake2b_final(&ctx, digest);
-                XCHECK(crypto_verify64(digest, pt) == 0, "invalid digest");
-                // do 1 extra read and expect an EOF
-                XCHECK(fread(buf, 1, 1, fp) != 1 && feof(fp), "expected EOF");
-                rv = 0;
-                goto error;
+        default:
+            ERR("bad encryption");
+            goto error;
+        case HEAD_BLOCK:
+            crypto_blake2b_update(&ctx, pt, length);
+            XWRITE(stdout, pt, length);
+            break;
+        case HEAD_DIGEST:
+            XCHECK(length == 64, "bad encryption");
+            crypto_blake2b_final(&ctx, digest);
+            XCHECK(crypto_verify64(digest, pt) == 0, "invalid digest");
+            // do 1 extra read and expect an EOF
+            XCHECK(fread(buf, 1, 1, fp) == 0 && feof(fp), "expected EOF");
+            rv = 0;
+            goto error;
         }
     }
 
@@ -356,7 +362,7 @@ error:
 //
 // Helpers for main(...)
 //
-int decode_key(u8* out, const u8* buf, size_t bufsize)
+static int decode_key(u8* out, const u8* buf, size_t bufsize)
 {
     int rv = 1;
     if (b64_decoded_size(buf, bufsize) == 32
@@ -367,7 +373,7 @@ int decode_key(u8* out, const u8* buf, size_t bufsize)
     return rv;
 }
 
-int read_key(FILE* fp, u8* buf)
+static int read_key(FILE* fp, u8* buf)
 {
     int rv = 1;
     u8 b64_buf[B64_KEY_SIZE];
@@ -385,7 +391,7 @@ error:
     return rv;
 }
 
-int askpass(u8* password, size_t bufsize, size_t* password_size)
+static int askpass(u8* password, size_t bufsize, size_t* password_size)
 {
     char* ptr = readpassphrase("ichi-lock: password: ",
                                (char *) password, bufsize,
@@ -486,22 +492,25 @@ int main(int argc, char** argv)
         }
     }
 
-    // check that we only have 1 positional argument at most
+    // check that we only have at most 1 positional argument
     XCHECK(argc <= optind + 1, SEE_USAGE);
     if (argc == optind + 1) {
         input_fp = fopen(argv[optind], "r");
         XCHECK(input_fp != NULL, "cannot open input file %s", argv[optind]);
     }
 
-    XCHECK(!(kflag && pflag), "cannot specify both -p and -k");
+    XCHECK(!(kflag && pflag), "cannot specify both key and password");
 
     switch (action) {
+    default:
+        ERR(SEE_USAGE);
+        break;
     case 'E':
         if (pflag) {
             rv = encrypt_pdkf(input_fp, password, password_size);
         } else {
             /* XCHECK(kflag, "no key file specified"); */
-            XCHECK(rcs.size > 0, "needs at least 1 recepient");
+            XCHECK(rcs.size > 0, "need at least 1 recepient");
             if (!kflag)
                 XCHECK(_random(sk, 32) == 0, "cannot generate ephemeral key");
             rv = encrypt_pubkey(input_fp, sk, rcs);
