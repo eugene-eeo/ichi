@@ -272,12 +272,10 @@ static int decrypt(FILE* fp,
        key_mode [1];
     size_t length;
 
-    size_t ct_size = READ_SIZE + 1 + 16,
-           pt_size = READ_SIZE + 1;
-    u8 *ct = malloc(ct_size),
-       *pt = malloc(pt_size);
+    size_t buf_size = READ_SIZE + 1 + 16;
+    u8 *buf = malloc(buf_size);
 
-    XCHECK(ct != NULL && pt != NULL, "malloc");
+    XCHECK(buf != NULL, "malloc");
     XREAD(fp, nonce, 24);
     XREAD(fp, key_mode, 1);
 
@@ -301,14 +299,16 @@ static int decrypt(FILE* fp,
     crypto_blake2b_ctx ctx;
     crypto_blake2b_general_init(&ctx, 64, enc_key, 32);
 
+    u8 *pt = buf + 16;
+
     while (1) {
-        XREAD(fp, ct, 16 + 2);
-        XCHECK(ls_unlock_length(&length, nonce, enc_key, ct) == 0,
+        XREAD(fp, buf, 16 + 2);
+        XCHECK(ls_unlock_length(&length, nonce, enc_key, buf) == 0,
                "bad encryption: cannot unlock");
         XCHECK(length >= 1,             "bad encryption");
         XCHECK(length <= READ_SIZE + 1, "bad encryption");
-        XREAD(fp, ct, 16 + length);
-        XCHECK(ls_unlock_payload(pt, nonce, enc_key, ct, length) == 0,
+        XREAD(fp, buf, 16 + length);
+        XCHECK(ls_unlock_payload(buf + 16, nonce, enc_key, buf, length) == 0,
                "bad encryption: cannot unlock");
 
         switch (pt[0]) {
@@ -316,7 +316,7 @@ static int decrypt(FILE* fp,
             ERR("bad encryption");
             goto error;
         case HEAD_BLOCK:
-            crypto_blake2b_update(&ctx, pt + 1, length - 1);
+            crypto_blake2b_update(&ctx, buf + 17, length - 1);
             XWRITE(stdout, pt + 1, length - 1);
             break;
         case HEAD_DIGEST:
@@ -324,7 +324,7 @@ static int decrypt(FILE* fp,
             crypto_blake2b_final(&ctx, digest);
             XCHECK(crypto_verify64(digest, pt + 1) == 0, "invalid digest");
             // do 1 extra read and expect an EOF
-            XCHECK(fread(ct, 1, 1, fp) == 0 && feof(fp), "expected EOF");
+            XCHECK(fread(buf, 1, 1, fp) == 0 && feof(fp), "expected EOF");
             rv = 0;
             goto error;
         }
@@ -332,8 +332,7 @@ static int decrypt(FILE* fp,
 
 error:
     length = 0;
-    _free(ct, ct_size);
-    _free(pt, pt_size);
+    _free(buf, buf_size);
     WIPE_BUF(enc_key);
     return rv;
 }
@@ -477,7 +476,6 @@ int main(int argc, char** argv)
         if (pflag) {
             rv = encrypt_pdkf(input_fp, password, password_size);
         } else {
-            /* XCHECK(kflag, "no key file specified"); */
             XCHECK(rcs.size > 0, "need at least 1 recepient");
             if (!kflag)
                 XCHECK(_random(sk, 32) == 0, "cannot generate ephemeral key");
