@@ -17,13 +17,14 @@
 
 static const char* HELP =
     "usage: ichi-keygen -h\n"
-    "       ichi-keygen {-S | -L} [-p <pk>] [-s <sk>]\n\n"
+    "       ichi-keygen {-S | -L} [-p PK] [-s SK] [-b BASE]\n\n"
     "options:\n"
     "  -h       show help.\n"
     "  -S       generate a keypair for ichi-sign.\n"
     "  -L       generate a keypair for ichi-lock.\n"
-    "  -p <pk>  specify public key file (default for -S: .sign.pub, -L: .lock.pub)\n"
-    "  -s <sk>  specify secret key file (default for -S: .sign.key, -L: .lock.key)\n\n";
+    "  -p PK    specify public key file (default for -S: .sign.pub, -L: .lock.pub)\n"
+    "  -s SK    specify secret key file (default for -S: .sign.key, -L: .lock.key)\n"
+    "  -b BASE  write public/secret keys in BASE.pub and BASE.key, respectively.\n\n";
 
 
 static int keygen_lock(uint8_t pk[32], uint8_t sk[32]);
@@ -57,19 +58,9 @@ int write_key(uint8_t pk[32],  uint8_t sk[32],
     uint8_t b64[B64_KEY_SIZE];
     FILE* fp = NULL;
 
-    size_t pk_len = strlen(pk_fn),
-           sk_len = strlen(sk_fn);
-
-    char *fn = malloc(MAX(pk_len, sk_len) + 1);
-    if (fn == NULL) {
-        ERR("malloc");
-        goto error;
-    }
-
     // write pk
-    memcpy(fn, pk_fn, pk_len + 1); // include NULL
     b64_encode(b64, pk, 32);
-    if ((fp = fopen(fn, "w")) == NULL
+    if ((fp = fopen(pk_fn, "w")) == NULL
             || _write(fp, b64, sizeof(b64)) != 0
             || _write(fp, (uint8_t*) "\n", 1) != 0
             || _fclose(&fp) != 0) {
@@ -78,9 +69,8 @@ int write_key(uint8_t pk[32],  uint8_t sk[32],
     }
 
     // write sk
-    memcpy(fn, sk_fn, sk_len + 1); // include NULL
     b64_encode(b64, sk, 32);
-    if ((fp = fopen(fn, "w")) == NULL
+    if ((fp = fopen(sk_fn, "w")) == NULL
             || _write(fp, b64, sizeof(b64)) != 0
             || _write(fp, (uint8_t*) "\n", 1) != 0
             || _fclose(&fp) != 0) {
@@ -89,7 +79,6 @@ int write_key(uint8_t pk[32],  uint8_t sk[32],
     }
 
 error:
-    if (fn != NULL) free(fn);
     if (fp != NULL) fclose(fp);
     WIPE_BUF(b64);
     return rv;
@@ -104,22 +93,38 @@ int main(int argc, char** argv)
     int c;
     int mode = 0;
 
+    char* base  = NULL;
     char* pk_fn = NULL;
     char* sk_fn = NULL;
 
-    while ((c = getopt(argc, argv, "SLp:s:h")) != -1)
+    while ((c = getopt(argc, argv, "SLp:s:b:h")) != -1)
         switch (c) {
             default: __ERROR(SEE_USAGE); break;
             case 'S': mode = 'S'; break;
             case 'L': mode = 'L'; break;
             case 'p': pk_fn = optarg; break;
             case 's': sk_fn = optarg; break;
+            case 'b': base = optarg; break;
             case 'h':
                 printf("%s", HELP);
                 rv = 0;
                 goto error;
                 break;
         }
+
+    if (base != NULL) {
+        size_t base_len = strlen(base);
+        pk_fn = malloc(base_len + 5);
+        sk_fn = malloc(base_len + 5);
+        if (pk_fn == NULL || sk_fn == NULL) {
+            ERR("malloc");
+            goto error;
+        }
+        memcpy(pk_fn,            base,   base_len);
+        memcpy(pk_fn + base_len, ".pub", 5);
+        memcpy(sk_fn,            base,   base_len);
+        memcpy(sk_fn + base_len, ".key", 5);
+    }
 
     uint8_t pk[32], sk[32];
 

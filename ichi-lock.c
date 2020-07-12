@@ -25,11 +25,13 @@ static const char *HELP =
     "  ichi-lock -E -p PASS [-o OUTPUT] [INPUT]\n"
     "  ichi-lock -D -k KEY [-v SENDER] [-o OUTPUT] [INPUT]\n"
     "  ichi-lock -D -p PASS [-o OUTPUT] [INPUT]\n"
+    "\n"
     "options:\n"
     "  -E        encrypt INPUT into OUTPUT.\n"
     "  -D        decrypt INPUT into OUTPUT.\n"
     "  -i KEY    use private key file at path KEY.\n"
     "  -r RECP   with -E, specify recepient public key RECP (base64).\n"
+    "            can be repeated.\n"
     "  -R FILE   same as -r, but use key at path FILE instead.\n"
     "  -o OUTPUT set OUTPUT stream.\n"
     "  -p PASS   use password file at path PASS.\n"
@@ -38,7 +40,7 @@ static const char *HELP =
     "\n"
     "INPUT defaults to stdin, and OUTPUT defaults to stdout.\n"
     "\n"
-    "RECP and SENDER should be a base64 string produced by `ichi-keygen`.\n"
+    "RECP and SENDER should be a base64 string produced by `ichi-keygen`.\n\n"
     ;
 
 #define WIPE_BUF(buf)    crypto_wipe((buf), sizeof(buf))
