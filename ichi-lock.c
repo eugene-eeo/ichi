@@ -418,7 +418,7 @@ int main(int argc, char** argv)
     size_t password_size = 0;
     u8 verify_sender [32],
        sk            [32],
-       password      [1024],
+       password      [512],
        recepient     [32];
 
     int kflag = 0,
