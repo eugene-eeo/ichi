@@ -31,18 +31,16 @@ static const char *HELP =
     "  -E        encrypt INPUT into OUTPUT.\n"
     "  -D        decrypt INPUT into OUTPUT.\n"
     "  -k KEY    use secret key file at path KEY.\n"
-    "  -r RECP   with -E, specify recepient public key RECP (base64).\n"
+    "  -r RECP   with -E, specify recepient public key at path RECP.\n"
     "            can be repeated.\n"
-    "  -R FILE   same as -r, but use key at path FILE instead.\n"
     "  -o OUTPUT set OUTPUT stream.\n"
     "  -p PASS   use password file at path PASS.\n"
     "  -a        specify password interactively.\n"
     "  -v SENDER with -D, verify that SENDER produced the encryption.\n"
-    "  -V FILE   same as -v, but use key at path FILE instead.\n"
     "\n"
     "INPUT defaults to stdin, and OUTPUT defaults to stdout.\n"
     "\n"
-    "RECP and SENDER should be a base64 string produced by `ichi-keygen`.\n\n";
+    "RECP and SENDER should be files produced by `ichi-keygen`.\n\n";
 
 #define WIPE_BUF(buf)    crypto_wipe((buf), sizeof(buf))
 #define WIPE_CTX(ctx)    crypto_wipe((ctx), sizeof(*(ctx)))
@@ -429,24 +427,18 @@ int main(int argc, char** argv)
         action = 0;
 
     int c = 0;
-    while ((c = getopt(argc, argv, "hEDR:r:k:V:v:p:o:a")) != -1) {
+    while ((c = getopt(argc, argv, "hEDr:k:v:p:o:a")) != -1) {
         switch (c) {
         default: goto error;
         case 'h':
             printf("%s", HELP);
             rv = 0;
             goto error;
-        case 'R':
+        case 'r':
             XOPEN(optarg);
             XCHECK(read_key(tmp_fp, recepient) == 0,
                    "invalid recepient key file: %s", optarg);
             _fclose(&tmp_fp);
-            if (add_recepient(&rcs, recepient) != 0)
-                goto error;
-            break;
-        case 'r':
-            XCHECK(decode_key(recepient, (u8 *) optarg, strcspn(optarg, "\r\n")) == 0,
-                   "invalid recepient key: %s", optarg);
             if (add_recepient(&rcs, recepient) != 0)
                 goto error;
             break;
@@ -458,11 +450,6 @@ int main(int argc, char** argv)
             _fclose(&tmp_fp);
             break;
         case 'v':
-            vflag = 1;
-            XCHECK(decode_key(verify_sender, (u8 *) optarg, strlen(optarg)) == 0,
-                   "invalid public key: %s", optarg);
-            break;
-        case 'V':
             vflag = 1;
             XOPEN(optarg);
             XCHECK(read_key(tmp_fp, verify_sender) == 0,

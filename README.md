@@ -24,8 +24,8 @@ encrypt for `id1` and `id2`:
 
 ```sh
 $ ichi-lock -E \
-    -R id1.pub \
-    -R id2.pub \
+    -r id1.pub \
+    -r id2.pub \
     -k me.key  \
     -o encrypted \
     <(echo "Hello")
@@ -34,6 +34,6 @@ $ ichi-lock -E \
 decrypt, and verify that `me` is the sender:
 
 ```sh
-$ luck -D -k id1.key -V me.pub encrypted
+$ luck -D -k id1.key -v me.pub encrypted
 Hello
 ```

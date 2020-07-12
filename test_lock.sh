@@ -18,9 +18,9 @@ setup() {
     ichi-keygen -L -b test/b
     ichi-keygen -L -b test/c
 
-    ichi-lock -E -R test/a.pub \
-                 -R test/b.pub \
-                 -R test/c.pub \
+    ichi-lock -E -r test/a.pub \
+                 -r test/b.pub \
+                 -r test/c.pub \
                  -k test/x.key \
                  -o test/enc \
                  README.md
@@ -28,7 +28,7 @@ setup() {
 
     # each recepient should be able to decrypt
     for key in a b c; do
-        ichi-lock -D -V test/x.pub \
+        ichi-lock -D -v test/x.pub \
                      -k "test/${key}.key" \
                      -o test/out \
                      test/enc
@@ -36,11 +36,11 @@ setup() {
     done
 
     # incorrect sender verification
-    run ichi-lock -D -V test/a.pub -k test/a.key test/enc
+    run ichi-lock -D -v test/a.pub -k test/a.key test/enc
     [ "$status" != 0 ]
 
     # epehemeral keypair
-    ichi-lock -E -R test/x.pub \
+    ichi-lock -E -r test/x.pub \
                  -o test/enc \
                  README.md
     ichi-lock -D -k test/x.key -o test/dec test/enc
