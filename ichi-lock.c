@@ -202,19 +202,17 @@ static int decrypt_pubkey_block(FILE* fp,
                                 const u8* sender_to_verify)
 {
     int rv = 1;
-    size_t nrecp;
     u8 kx_ct      [16 + 32],
        shared_key [32],
        sender_pk  [32],
-       nrecp_u8   [1];
+       nrecp;
 
     XREAD(fp, sender_pk, 32);
-    XREAD(fp, nrecp_u8,  1);
-    nrecp = (size_t) nrecp_u8[0];
+    XREAD(fp, &nrecp,    1);
 
     if (sender_to_verify != NULL)
         XCHECK(crypto_verify32(sender_to_verify, sender_pk) == 0,
-              "sender verification failed");
+               "sender verification failed");
 
     crypto_key_exchange(shared_key, recp_sk, sender_pk);
 
@@ -340,31 +338,23 @@ error:
 //
 // Helpers for main(...)
 //
-static int decode_key(u8* out, const u8* buf, size_t bufsize)
-{
-    int rv = 1;
-    if (b64_decoded_size(buf, bufsize) == 32
-            && b64_validate(buf, bufsize) == 0) {
-        b64_decode(out, buf, bufsize);
-        rv = 0;
-    }
-    return rv;
-}
-
-static int read_key(FILE* fp, u8* buf)
+static int read_key(char* fn, u8* key)
 {
     int rv = 1;
     u8 b64_buf[B64_KEY_SIZE];
-    if (_read(fp, b64_buf, sizeof(b64_buf)) != 0) {
-        ERR("cannot read private key");
-        goto error;
-    }
-    if (decode_key(buf, b64_buf, sizeof(b64_buf)) != 0) {
-        ERR("invalid private key")
-        goto error;
-    }
+    FILE *fp = fopen(fn, "r");
+
+    XCHECK(fp != NULL, "cannot open key file: %s", fn);
+    XCHECK(_read(fp, b64_buf, sizeof(b64_buf)) == 0,
+           "cannot read key");
+    XCHECK(b64_decoded_size(b64_buf, sizeof(b64_buf)) == 32
+            && b64_validate(b64_buf, sizeof(b64_buf)) == 0,
+           "invalid key");
+    b64_decode(key, b64_buf, sizeof(b64_buf));
     rv = 0;
+
 error:
+    if (fp != NULL) fclose(fp);
     WIPE_BUF(b64_buf);
     return rv;
 }
@@ -382,11 +372,6 @@ static int askpass(u8* password, size_t bufsize, size_t* password_size)
 
 int main(int argc, char** argv)
 {
-    #define XOPEN(fn) {\
-        tmp_fp = fopen(fn, "r");\
-        XCHECK(tmp_fp != NULL, "fopen '%s'", fn);\
-    }
-
     int rv = 1;
     struct recepients rcs;
     rcs.recp = NULL;
@@ -415,26 +400,20 @@ int main(int argc, char** argv)
             rv = 0;
             goto error;
         case 'r':
-            XOPEN(optarg);
-            XCHECK(read_key(tmp_fp, recepient) == 0,
+            XCHECK(read_key(optarg, recepient) == 0,
                    "invalid recepient key file: %s", optarg);
-            _fclose(&tmp_fp);
             if (add_recepient(&rcs, recepient) != 0)
                 goto error;
             break;
         case 'k':
             kflag = 1;
-            XOPEN(optarg);
-            XCHECK(read_key(tmp_fp, sk) == 0,
+            XCHECK(read_key(optarg, sk) == 0,
                    "invalid secret key file: %s", optarg);
-            _fclose(&tmp_fp);
             break;
         case 'v':
             vflag = 1;
-            XOPEN(optarg);
-            XCHECK(read_key(tmp_fp, verify_sender) == 0,
+            XCHECK(read_key(optarg, verify_sender) == 0,
                    "invalid public key file: %s", optarg);
-            _fclose(&tmp_fp);
             break;
         case 'a':
             pflag = 1;
@@ -443,12 +422,13 @@ int main(int argc, char** argv)
             break;
         case 'p':
             pflag = 1;
-            XOPEN(optarg);
+            tmp_fp = fopen(optarg, "r");
             password_size = fread(password, 1, sizeof(password) - 1, tmp_fp);
             password[password_size] = '\0';
             password_size = strcspn((char *) password, "\r\n");
             XCHECK(!ferror(tmp_fp), "cannot read password file: %s", optarg);
-            _fclose(&tmp_fp);
+            fclose(tmp_fp);
+            tmp_fp = NULL;
             break;
         case 'o':
             stdout = fopen(optarg, "w");
@@ -509,6 +489,4 @@ error:
     if (tmp_fp != NULL) fclose(tmp_fp);
     if (rcs.recp != NULL) free(rcs.recp);
     return rv;
-
-    #undef XOPEN
 }
