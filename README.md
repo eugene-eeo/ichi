@@ -5,41 +5,35 @@
 simple set of tools for signing / encryption,
 built on Monocypher.
 
-Signing
--------
-
-```sh
-# generate keypair
-$ kurv -g id
-$ cat id.{pub,priv}
-P/Vkey2lTatqY5dHpxgxPrdSnbv4cQih+Gn7Flgs1tQ=
-...
-
-# signing
-$ kurv -sk id.priv README
-...
-----BEGIN KURV SIGNATURE----
-bQ3Mx3Vb0tdmb1GF2f0jgLm8GJpvQhYFYe2kkrOHkno5
-yOhnAi2Dl9Gmpt/Tx9aG4VyWTUjfdVyx7QI1xrpgCQ==
-----END KURV SIGNATURE----
-
-# checking signatures
-$ (cat signed-file | kurv -ck id.pub) && echo "ok"
-ok
-```
-
 Encryption
 ----------
 
+ - multiple recepients
+ - trusted / untrusted encryption (whether you choose to
+   use your private key or not)
+
+generate keys:
+
 ```sh
-$ luck -g id
-$ echo "Hello" \
-   | luck -ek id.pk \  # encrypt for recepient
-   | luck -dk id.sk    # decrypt
+$ ichi-keygen -L -b me
+$ ichi-keygen -L -b id1
+$ ichi-keygen -L -b id2
+```
+
+encrypt for `id1` and `id2`:
+
+```sh
+$ ichi-lock -E \
+    -R id1.pub \
+    -R id2.pub \
+    -k me.key  \
+    -o encrypted \
+    <(echo "Hello")
+```
+
+decrypt, and verify that `me` is the sender:
+
+```sh
+$ luck -D -k id1.key -V me.pub encrypted
 Hello
-$ export LUCK_ASKPASS='zenity --password'
-$ echo "World" \
-   | luck -ep \ # with password
-   | luck -dp
-World
 ```
