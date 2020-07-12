@@ -70,19 +70,19 @@ struct ls_pdkf_params pdkf_standard_params = {
 static int encrypt_lockstream(FILE* fp, const u8 enc_key[32], u8 nonce[24])
 {
     int rv = 1;
-    size_t pt_size = READ_SIZE + 1,
-           ct_size = pt_size + 34;
+    size_t buf_size = 34 + 1 + READ_SIZE;
+    u8 *buf = malloc(buf_size); // mac1 length mac2 head ...
 
-    u8 *pt = malloc(pt_size),
-       *ct = malloc(ct_size);
+    XCHECK(buf != NULL, "malloc");
 
-    XCHECK(pt != NULL && ct != NULL, "malloc");
+    u8 *ct = buf,
+       *pt = buf + 34;
 
     crypto_blake2b_ctx ctx;
     crypto_blake2b_general_init(&ctx, 64, enc_key, 32);
 
     while (1) {
-        size_t n = fread(pt + 1, 1, pt_size - 1, fp);
+        size_t n = fread(pt + 1, 1, READ_SIZE, fp);
         XCHECK(!ferror(fp), "cannot read");
         if (n > 0) {
             pt[0] = HEAD_BLOCK;
@@ -101,8 +101,7 @@ static int encrypt_lockstream(FILE* fp, const u8 enc_key[32], u8 nonce[24])
     }
 
 error:
-    _free(pt, pt_size);
-    _free(ct, ct_size);
+    _free(buf, buf_size);
     WIPE_CTX(&ctx);
     return rv;
 }
