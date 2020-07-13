@@ -114,17 +114,17 @@ int main(int argc, char** argv)
         }
 
     if (base != NULL) {
-        size_t base_len = strlen(base);
-        pk_fn = malloc(base_len + 5);
-        sk_fn = malloc(base_len + 5);
+        size_t len = strlen(base);
+        pk_fn = malloc(len + 5);
+        sk_fn = malloc(len + 5);
         if (pk_fn == NULL || sk_fn == NULL) {
             ERR("malloc");
             goto error;
         }
-        memcpy(pk_fn,            base,   base_len);
-        memcpy(pk_fn + base_len, ".pub", 5);
-        memcpy(sk_fn,            base,   base_len);
-        memcpy(sk_fn + base_len, ".key", 5);
+        memcpy(pk_fn,       base,   len);
+        memcpy(pk_fn + len, ".pub", 5);
+        memcpy(sk_fn,       base,   len);
+        memcpy(sk_fn + len, ".key", 5);
     }
 
     uint8_t pk[32], sk[32];

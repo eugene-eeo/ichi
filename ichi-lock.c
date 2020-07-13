@@ -79,7 +79,7 @@ static int encrypt_lockstream(FILE* fp, const u8 enc_key[32], u8 nonce[24])
        *pt = buf + 34;
 
     crypto_blake2b_ctx ctx;
-    crypto_blake2b_general_init(&ctx, 64, enc_key, 32);
+    crypto_blake2b_init(&ctx);
 
     while (1) {
         size_t n = fread(pt + 1, 1, READ_SIZE, fp);
@@ -267,7 +267,7 @@ static int decrypt(FILE* fp,
     u8 nonce    [24],
        enc_key  [32],
        digest   [64],
-       key_mode [1];
+       key_mode;
     size_t length;
 
     size_t buf_size = READ_SIZE + 1 + 16;
@@ -275,9 +275,9 @@ static int decrypt(FILE* fp,
 
     ENSURE(buf != NULL, "malloc");
     XREAD(fp, nonce, 24);
-    XREAD(fp, key_mode, 1);
+    XREAD(fp, &key_mode, 1);
 
-    switch(key_mode[0]) {
+    switch(key_mode) {
         default:
             ERR("bad encryption");
             goto error;
@@ -295,7 +295,7 @@ static int decrypt(FILE* fp,
 
     // begin ptrypt
     crypto_blake2b_ctx ctx;
-    crypto_blake2b_general_init(&ctx, 64, enc_key, 32);
+    crypto_blake2b_init(&ctx);
 
     u8 *pt = buf + 16;
 
@@ -306,7 +306,7 @@ static int decrypt(FILE* fp,
         ENSURE(length >= 1,             "bad encryption");
         ENSURE(length <= READ_SIZE + 1, "bad encryption");
         XREAD(fp, buf, 16 + length);
-        ENSURE(ls_unlock_payload(buf + 16, nonce, enc_key, buf, length) == 0,
+        ENSURE(ls_unlock_payload(pt, nonce, enc_key, buf, length) == 0,
                "bad encryption: cannot unlock");
 
         switch (pt[0]) {
@@ -344,12 +344,12 @@ static int read_key(char* fn, char* key_type, u8* key)
     u8 b64_buf[B64_KEY_SIZE];
     FILE *fp = fopen(fn, "r");
 
-    ENSURE(fp != NULL, "cannot open %s key file: %s", key_type, fn);
+    ENSURE(fp != NULL, "cannot open %s key file '%s'", key_type, fn);
     ENSURE(_read(fp, b64_buf, sizeof(b64_buf)) == 0,
-           "cannot read %s key", key_type);
+           "cannot read %s key '%s'", key_type, fn);
     ENSURE(b64_decoded_size(b64_buf, sizeof(b64_buf)) == 32
             && b64_validate(b64_buf, sizeof(b64_buf)) == 0,
-           "invalid %s key", key_type);
+           "invalid %s key '%s'", key_type, fn);
     b64_decode(key, b64_buf, sizeof(b64_buf));
     rv = 0;
 

@@ -75,8 +75,7 @@ At the end of the stream, we furthermore add the digest chunk:
     └───────────┴─────────────────┴───────────┴────────────────────────┘
 
 where `length` = 65, `mac1` and `mac2` are produced as before,
-and `digest` is the 64-byte blake2b digest of the entire plaintext,
-with the key being the encryption key `K`.
+and `digest` is the 64-byte blake2b digest of the entire plaintext.
 
 To decrypt the encryption stream:
 
