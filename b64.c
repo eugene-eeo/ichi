@@ -9,16 +9,17 @@
 
 #define ERR(...)       _err("b64", __VA_ARGS__)
 #define WIPE_CTX(ctx)  crypto_wipe(ctx, sizeof(*(ctx)))
+#define XERR(...)      { ERR(__VA_ARGS__); goto error; }
 
 static const char* HELP =
     "usage: b64 -h\n"
-    "       b64 [-e] [-w <length>]\n"
+    "       b64 [-e] [-w LENGTH]\n"
     "       b64 -d\n"
     "args:\n"
-    "  -h           show help\n"
-    "  -e           encode (default) stdin\n"
-    "  -w <length>  set line wrap length (>=0, default: 76)\n"
-    "  -d           decode stdin\n"
+    "  -h         show help\n"
+    "  -e         encode (default) stdin\n"
+    "  -w LENGTH  set line wrap length (>=0, default: 76)\n"
+    "  -d         decode stdin\n"
     ;
 
 int encode(FILE* fp, size_t wrap);
@@ -62,15 +63,13 @@ uint8_t *unwraplines(uint8_t *head, const uint8_t *buf, size_t bufsize)
 
 int encode(FILE* fp, size_t wrap)
 {
-#define __ERROR(m) { ERR(m); goto error; }
-
     int rv = 1;
     size_t bufsize = 1024,
            encsize = b64_encode_update_size(bufsize);
     uint8_t *buf = malloc(1024),
             *enc = malloc(encsize);
     if (buf == NULL || enc == NULL)
-        __ERROR("malloc");
+        XERR("malloc");
 
     size_t so_far = 0; // state for wraplines
     b64_encode_ctx ctx;
@@ -79,14 +78,14 @@ int encode(FILE* fp, size_t wrap)
     for (;;) {
         size_t n = fread(buf, 1, bufsize, fp);
         if (ferror(fp))
-            __ERROR("fread");
+            XERR("fread");
         size_t m = b64_encode_update(&ctx, enc, buf, n);
         if (wraplines(&so_far, wrap, enc, m, 0) != 0)
-            __ERROR("fwrite");
+            XERR("fwrite");
         if (feof(fp)) {
             m = b64_encode_final(&ctx, enc);
             if (wraplines(&so_far, wrap, enc, m, 1) != 0)
-                __ERROR("fwrite");
+                XERR("fwrite");
             break;
         }
     }
@@ -97,21 +96,17 @@ error:
     _free(buf, bufsize);
     _free(enc, encsize);
     return rv;
-
-#undef __ERROR
 }
 
 int decode(FILE* fp)
 {
-#define __ERROR(m) { ERR(m); goto error; }
-
     int rv = 1;
     size_t bufsize = 1024,
            decsize = b64_decode_update_size(bufsize);
     uint8_t *buf = malloc(1024),
             *dec = malloc(decsize);
     if (buf == NULL || dec == NULL)
-        __ERROR("malloc");
+        XERR("malloc");
 
     b64_decode_ctx ctx;
     b64_decode_init(&ctx);
@@ -119,23 +114,23 @@ int decode(FILE* fp)
     for (;;) {
         size_t n = fread(buf, 1, bufsize, fp);
         if (ferror(fp))
-            __ERROR("fread");
+            XERR("fread");
 
         uint8_t *head = buf;
         uint8_t *tail;
         while ((tail = unwraplines(head, buf, n)) != NULL) {
             size_t m = b64_decode_update(&ctx, dec, head, tail - head);
             if (b64_decode_err(&ctx))
-                __ERROR("invalid base64");
+                XERR("invalid base64");
             if (_write(stdout, dec, m) != 0)
-                __ERROR("fwrite");
+                XERR("fwrite");
             head = tail + 1;
         }
 
         if (feof(fp)) {
             b64_decode_final(&ctx);
             if (b64_decode_err(&ctx))
-                __ERROR("invalid base64");
+                XERR("invalid base64");
             break;
         }
     }
@@ -146,8 +141,6 @@ error:
     _free(buf, bufsize);
     _free(dec, decsize);
     return rv;
-
-#undef __ERROR
 }
 
 int main(int argc, char **argv)
@@ -160,8 +153,7 @@ int main(int argc, char **argv)
     while ((c = getopt(argc, argv, "hedw:")) != -1)
         switch (c) {
             default:
-                ERR("invalid usage: see b64 -h");
-                goto error;
+                XERR("invalid usage: see b64 -h");
             case 'h':
                 printf("%s", HELP);
                 rv = 0;
@@ -169,10 +161,8 @@ int main(int argc, char **argv)
             case 'w':
                 errno = 0;
                 wrap = strtol(optarg, &tmp, 10);
-                if (errno || tmp == optarg) {
-                    ERR("invalid argument to -w");
-                    goto error;
-                }
+                if (errno || tmp == optarg)
+                    XERR("invalid argument to -w");
                 break;
             case 'e': action = 'e'; break;
             case 'd': action = 'd'; break;

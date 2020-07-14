@@ -114,7 +114,6 @@ int sign(struct sign_ctx ctx)
             sig     [64],
             b64_sig [B64_SIG_SIZE];
 
-
     size_t msg_size;
     uint8_t* msg = fp_to_buf(ctx.input, &msg_size);
     if (msg == NULL)
@@ -124,7 +123,6 @@ int sign(struct sign_ctx ctx)
     crypto_sign(sig, ctx.sk, pk, msg, msg_size);
     b64_encode(b64_sig, sig, 64);
 
-    // write signature
     if (ctx.detached) {
         XWRITE(ctx.output, b64_sig, B64_SIG_SIZE);
     } else {
