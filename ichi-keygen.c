@@ -11,7 +11,7 @@
 #define B64_KEY_SIZE 44
 #define SEE_USAGE "invalid usage: see ichi-keygen -h"
 
-#define ERR(...)      { _err("ichi-keygen", __VA_ARGS__) }
+#define ERR(...)      _err("ichi-keygen", __VA_ARGS__)
 #define WIPE_BUF(buf) crypto_wipe(buf, sizeof(buf))
 #define MAX(a, b)     ((a) > (b) ? (a) : (b))
 
@@ -51,8 +51,8 @@ int keygen_sign(uint8_t pk[32], uint8_t sk[32])
 }
 
 
-int write_key(uint8_t pk[32],  uint8_t sk[32],
-              char* pk_fn,     char* sk_fn)
+int write_key(uint8_t pk[32], uint8_t sk[32],
+              char* pk_fn,    char* sk_fn)
 {
     int rv = 1;
     uint8_t b64[B64_KEY_SIZE];
@@ -115,16 +115,18 @@ int main(int argc, char** argv)
 
     if (base != NULL) {
         size_t len = strlen(base);
-        pk_fn = malloc(len + 5);
-        sk_fn = malloc(len + 5);
+        pk_fn = malloc(len + 10);
+        sk_fn = malloc(len + 10);
         if (pk_fn == NULL || sk_fn == NULL) {
             ERR("malloc");
             goto error;
         }
-        memcpy(pk_fn,       base,   len);
-        memcpy(pk_fn + len, ".pub", 5);
-        memcpy(sk_fn,       base,   len);
-        memcpy(sk_fn + len, ".key", 5);
+        char* pk_suffix = mode == 'S' ? ".sign.pub" : ".lock.pub";
+        char* sk_suffix = mode == 'S' ? ".sign.key" : ".lock.key";
+        memcpy(pk_fn,       base,      len);
+        memcpy(pk_fn + len, pk_suffix, 10);
+        memcpy(sk_fn,       base,      len);
+        memcpy(sk_fn + len, sk_suffix, 10);
     }
 
     uint8_t pk[32], sk[32];

@@ -5,6 +5,27 @@
 simple set of tools for signing / encryption,
 built on Monocypher.
 
+Signing
+-------
+
+ - produce inline or detached signatures
+ - keyring support
+
+generate keys:
+
+```sh
+$ ichi-keygen -S -b id
+```
+
+sign + verify (inline):
+
+```sh
+$ echo "hello world!" \
+    | ichi-sign -k id.sign.key
+    | ichi-sign -V -p id.sign.pub
+ichi-sign: good signature by 'id.sign.pub'
+```
+
 Encryption
 ----------
 
@@ -24,9 +45,9 @@ encrypt for `id1` and `id2`:
 
 ```sh
 $ ichi-lock -E \
-    -r id1.pub \
-    -r id2.pub \
-    -k me.key  \
+    -r id1.lock.pub \
+    -r id2.lock.pub \
+    -k me.lock.key  \
     -o encrypted \
     <(echo "Hello")
 ```
@@ -34,6 +55,6 @@ $ ichi-lock -E \
 decrypt, and verify that `me` is the sender:
 
 ```sh
-$ luck -D -k id1.key -v me.pub encrypted
+$ ichi-lock -D -k id1.key -v me.lock.pub encrypted
 Hello
 ```

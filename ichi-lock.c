@@ -23,9 +23,9 @@
 static const char *HELP =
     "usage:\n"
     "  ichi-lock -E [-k KEY] -r RECP [-o OUTPUT] [INPUT]\n"
-    "  ichi-lock -E -p PASS [-o OUTPUT] [INPUT]\n"
     "  ichi-lock -D -k KEY [-v SENDER] [-o OUTPUT] [INPUT]\n"
-    "  ichi-lock -D -p PASS [-o OUTPUT] [INPUT]\n"
+    "  ichi-lock -E {-p PASS | -a} [-o OUTPUT] [INPUT]\n"
+    "  ichi-lock -D {-p PASS | -a} [-o OUTPUT] [INPUT]\n"
     "\n"
     "options:\n"
     "  -E        encrypt INPUT into OUTPUT.\n"

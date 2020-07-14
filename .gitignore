@@ -1,5 +1,6 @@
 /ichi-keygen
 /ichi-lock
+/ichi-sign
 *.o
 /test/
 *.key

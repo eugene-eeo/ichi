@@ -8,8 +8,8 @@ setup() {
 
 @test 'keygen' {
     ichi-keygen -L -b test/id
-    [ -f test/id.key ]
-    [ -f test/id.pub ]
+    [ -f test/id.lock.key ]
+    [ -f test/id.lock.pub ]
 }
 
 @test 'encrypt (pubkey)' {
@@ -18,32 +18,32 @@ setup() {
     ichi-keygen -L -b test/b
     ichi-keygen -L -b test/c
 
-    ichi-lock -E -r test/a.pub \
-                 -r test/b.pub \
-                 -r test/c.pub \
-                 -k test/x.key \
+    ichi-lock -E -r test/a.lock.pub \
+                 -r test/b.lock.pub \
+                 -r test/c.lock.pub \
+                 -k test/x.lock.key \
                  -o test/enc \
                  README.md
     [ -f test/enc ]
 
     # each recepient should be able to decrypt
     for key in a b c; do
-        ichi-lock -D -v test/x.pub \
-                     -k "test/${key}.key" \
+        ichi-lock -D -v test/x.lock.pub \
+                     -k "test/${key}.lock.key" \
                      -o test/out \
                      test/enc
         [ "$(cat test/out)" = "$(cat README.md)" ]
     done
 
     # incorrect sender verification
-    run ichi-lock -D -v test/a.pub -k test/a.key test/enc
+    run ichi-lock -D -v test/a.lock.pub -k test/a.lock.key test/enc
     [ "$status" != 0 ]
 
     # epehemeral keypair
-    ichi-lock -E -r test/x.pub \
+    ichi-lock -E -r test/x.lock.pub \
                  -o test/enc \
                  README.md
-    ichi-lock -D -k test/x.key -o test/dec test/enc
+    ichi-lock -D -k test/x.lock.key -o test/dec test/enc
     [ "$(cat test/dec)" = "$(cat README.md)" ]
 }
 
