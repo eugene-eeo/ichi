@@ -134,12 +134,18 @@ int main(int argc, char** argv)
     switch (mode) {
         default: __ERROR(SEE_USAGE); break;
         case 'S':
-            keygen_sign(pk, sk);
+            if (keygen_sign(pk, sk) != 0) {
+                ERR("cannot generate keypair");
+                goto error;
+            }
             if (pk_fn == NULL) pk_fn = ".sign.pub";
             if (sk_fn == NULL) sk_fn = ".sign.key";
             break;
         case 'L':
-            keygen_lock(pk, sk);
+            if (keygen_lock(pk, sk) != 0) {
+                ERR("cannot generate keypair");
+                goto error;
+            }
             if (pk_fn == NULL) pk_fn = ".lock.pub";
             if (sk_fn == NULL) sk_fn = ".lock.key";
             break;

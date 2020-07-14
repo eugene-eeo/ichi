@@ -72,7 +72,8 @@ struct verify_ctx {
 int trim(FILE* input, FILE* output);
 int sign(struct sign_ctx ctx);
 int verify(struct verify_ctx ctx);
-int verify_keyring(const uint8_t *msg, size_t msg_size,
+int verify_keyring(const struct verify_ctx* ctx,
+                   const uint8_t *msg, size_t msg_size,
                    const uint8_t *sig);
 
 uint8_t* fp_to_buf(FILE* fp, size_t* buf_size)
@@ -207,7 +208,7 @@ int verify(struct verify_ctx ctx)
     }
 
     if (ctx.keyring) {
-        rv = verify_keyring(msg, msg_size, sig);
+        rv = verify_keyring(&ctx, msg, msg_size, sig);
     } else {
         if (crypto_check(sig, ctx.pk, msg, msg_size) != 0)
             XERR("invalid signature");
@@ -222,7 +223,8 @@ error:
     return rv;
 }
 
-int verify_keyring(const uint8_t* msg, size_t msg_size,
+int verify_keyring(const struct verify_ctx* ctx,
+                   const uint8_t* msg, size_t msg_size,
                    const uint8_t* sig)
 {
     int rv = 1;
@@ -260,6 +262,7 @@ int verify_keyring(const uint8_t* msg, size_t msg_size,
                     keyring_dir,
                     keyring_dir[strlen(keyring_dir)] == '/' ? "" : "/",
                     entry->d_name);
+                XWRITE(ctx->output, msg, msg_size);
                 rv = 0;
                 break;
             }
