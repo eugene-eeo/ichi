@@ -136,6 +136,7 @@ int sign(struct sign_ctx ctx)
     rv = 0;
 
 error:
+    if (msg != NULL) free(msg);
     return rv;
 }
 
