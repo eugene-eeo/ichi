@@ -261,7 +261,8 @@ int verify_keyring(const struct verify_ctx* ctx,
                     keyring_dir,
                     keyring_dir[strlen(keyring_dir)] == '/' ? "" : "/",
                     entry->d_name);
-                XWRITE(ctx->output, msg, msg_size);
+                if (ctx->stream_output)
+                    XWRITE(ctx->output, msg, msg_size);
                 rv = 0;
                 break;
             }
