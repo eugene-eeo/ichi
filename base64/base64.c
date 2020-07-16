@@ -185,4 +185,7 @@ void b64_decode_final(b64_decode_ctx *ctx)
     ctx->bufsize = 0;
 }
 
-int b64_decode_err(b64_decode_ctx *ctx) { return (int)ctx->err; }
+int b64_decode_err(b64_decode_ctx *ctx)
+{
+    return (int)ctx->err;
+}
