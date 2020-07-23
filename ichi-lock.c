@@ -73,7 +73,7 @@ static int encrypt_lockstream(FILE* fp, const u8 enc_key[32], u8 nonce[24])
     size_t buf_size = 34 + 1 + READ_SIZE;
     u8 *buf = malloc(buf_size); // mac1 length mac2 head ...
 
-    ENSURE(buf != NULL, "malloc");
+    ENSURE(buf != NULL, "malloc()");
 
     u8 *ct = buf,
        *pt = buf + 34;
@@ -120,7 +120,7 @@ static int add_recepient(struct recepients *rs, const u8* rcp_key)
 
     u8* recp = reallocarray(rs->recp, 32, rs->size + 1);
     if (recp == NULL) {
-        ERR("malloc");
+        ERR("malloc()");
         return -1;
     }
 
@@ -273,7 +273,7 @@ static int decrypt(FILE* fp,
     size_t buf_size = READ_SIZE + 1 + 16;
     u8 *buf = malloc(buf_size);
 
-    ENSURE(buf != NULL, "malloc");
+    ENSURE(buf != NULL, "malloc()");
     XREAD(fp, nonce, 24);
     XREAD(fp, &key_mode, 1);
 
@@ -478,11 +478,11 @@ error:
     WIPE_BUF(password);
     WIPE_BUF(recepient);
     if (input_fp != NULL && fclose(input_fp) != 0) {
-        ERR("fclose");
+        ERR("fclose()");
         rv = 1;
     }
     if (stdout != NULL && fclose(stdout) != 0) {
-        ERR("fclose");
+        ERR("fclose()");
         rv = 1;
     }
     if (tmp_fp != NULL) fclose(tmp_fp);
