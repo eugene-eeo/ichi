@@ -30,7 +30,7 @@ Encryption
 ----------
 
  - multiple recepients
- - trusted / untrusted encryption (whether you choose to
+ - trusted / untrusted encryption (can choose to
    use your private key or not)
 
 generate keys:
