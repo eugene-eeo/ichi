@@ -70,7 +70,7 @@ struct ls_pdkf_params pdkf_standard_params = {
 static int encrypt_lockstream(FILE* fp, const u8 enc_key[32], u8 nonce[24])
 {
     int rv = 1;
-    size_t buf_size = 34 + 1 + READ_SIZE;
+    size_t buf_size = 16 + 2 + 16 + 1 + READ_SIZE;
     u8 *buf = malloc(buf_size); // mac1 length mac2 head ...
 
     ENSURE(buf != NULL, "malloc()");
