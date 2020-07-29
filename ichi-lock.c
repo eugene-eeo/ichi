@@ -422,6 +422,7 @@ int main(int argc, char** argv)
         case 'p':
             pflag = 1;
             tmp_fp = fopen(optarg, "r");
+            ENSURE(tmp_fp != NULL, "cannot open password file: %s", optarg);
             password_size = fread(password, 1, sizeof(password) - 1, tmp_fp);
             password[password_size] = '\0';
             password_size = strcspn((char *) password, "\r\n");
