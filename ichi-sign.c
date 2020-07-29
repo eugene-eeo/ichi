@@ -164,17 +164,20 @@ int sig_from_buf(uint8_t* sig, size_t* new_buf_size, const uint8_t* buf, size_t 
     #define SIG_SZ   (B64_SIG_SIZE + 1)
     #define END_SZ   (strlen(SIG_ARMOR_END))
     #define TOTAL_SZ (TOP_SZ + SIG_SZ + END_SZ)
+    #define TOP_PTR  (buf + buf_size - TOTAL_SZ)
+    #define SIG_PTR  (TOP_PTR + TOP_SZ)
+    #define END_PTR  (SIG_PTR + SIG_SZ)
 
     uint8_t b64_sig[B64_SIG_SIZE];
 
     if (buf_size < TOTAL_SZ
-            || memcmp(buf + buf_size - TOTAL_SZ, SIG_ARMOR_TOP, TOP_SZ) != 0
-            || memcmp(buf + buf_size - END_SZ,   SIG_ARMOR_END, END_SZ) != 0
-            || buf[buf_size - TOTAL_SZ + TOP_SZ + 44] != '\n')
+            || memcmp(TOP_PTR, SIG_ARMOR_TOP, TOP_SZ) != 0
+            || memcmp(END_PTR, SIG_ARMOR_END, END_SZ) != 0
+            || SIG_PTR[44] != '\n')
         return -1;
 
-    memcpy(b64_sig,      buf + buf_size - TOTAL_SZ + TOP_SZ,      44);
-    memcpy(b64_sig + 44, buf + buf_size - TOTAL_SZ + TOP_SZ + 45, 44);
+    memcpy(b64_sig,      SIG_PTR,      44);
+    memcpy(b64_sig + 44, SIG_PTR + 45, 44);
     if (b64_validate(b64_sig, B64_SIG_SIZE) != 0
             || b64_decoded_size(b64_sig, B64_SIG_SIZE) != 64)
         return -1;
@@ -186,6 +189,9 @@ int sig_from_buf(uint8_t* sig, size_t* new_buf_size, const uint8_t* buf, size_t 
     #undef SIG_SZ
     #undef END_SZ
     #undef TOTAL_SZ
+    #undef TOP_PTR
+    #undef SIG_PTR
+    #undef END_PTR
 }
 
 int verify(struct verify_ctx ctx)
