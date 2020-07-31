@@ -124,7 +124,7 @@ int main(int argc, char** argv)
         char* pk_suffix = mode == 'S' ? ".sign.pub" : ".lock.pub";
         char* sk_suffix = mode == 'S' ? ".sign.key" : ".lock.key";
         memcpy(pk_fn,       base,      len);
-        memcpy(pk_fn + len, pk_suffix, 10);
+        memcpy(pk_fn + len, pk_suffix, 10); // include NUL byte
         memcpy(sk_fn,       base,      len);
         memcpy(sk_fn + len, sk_suffix, 10);
     }
@@ -132,28 +132,22 @@ int main(int argc, char** argv)
     uint8_t pk[32], sk[32];
 
     switch (mode) {
-        default: __ERROR(SEE_USAGE); break;
+        default: __ERROR(SEE_USAGE);
         case 'S':
-            if (keygen_sign(pk, sk) != 0) {
-                ERR("cannot generate keypair");
-                goto error;
-            }
+            if (keygen_sign(pk, sk) != 0)
+                __ERROR("cannot generate keypair");
             if (pk_fn == NULL) pk_fn = ".sign.pub";
             if (sk_fn == NULL) sk_fn = ".sign.key";
             break;
         case 'L':
-            if (keygen_lock(pk, sk) != 0) {
-                ERR("cannot generate keypair");
-                goto error;
-            }
+            if (keygen_lock(pk, sk) != 0)
+                __ERROR("cannot generate keypair");
             if (pk_fn == NULL) pk_fn = ".lock.pub";
             if (sk_fn == NULL) sk_fn = ".lock.key";
             break;
     }
 
-    rv = write_key(pk, sk,
-                   pk_fn,
-                   sk_fn);
+    rv = write_key(pk, sk, pk_fn, sk_fn);
 
 error:
     WIPE_BUF(pk);
