@@ -23,9 +23,9 @@
 #define SIG_ARMOR_TOP "\n----BEGIN ICHI SIGNATURE----\n"
 #define SIG_ARMOR_END "\n---- END ICHI SIGNATURE ----\n"
 
-#define XERR(...)    { ERR(__VA_ARGS__); goto error; }
-#define XREAD(...)   { if (_read(__VA_ARGS__)) XERR("fread()"); }
-#define XWRITE(...)  { if (_write(__VA_ARGS__)) XERR("fwrite()"); }
+#define XERR(...)    do { ERR(__VA_ARGS__); goto error; } while(0)
+#define XREAD(...)   do { if (_read(__VA_ARGS__)) XERR("fread()"); } while(0)
+#define XWRITE(...)  do { if (_write(__VA_ARGS__)) XERR("fwrite()"); } while(0)
 
 const char* HELP =
     "usage:\n"

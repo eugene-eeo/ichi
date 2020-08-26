@@ -46,7 +46,7 @@ static const char *HELP =
 #define WIPE_CTX(ctx)    crypto_wipe((ctx), sizeof(*(ctx)))
 #define ERR(...)         _err("ichi-lock", __VA_ARGS__)
 
-#define ENSURE(x, ...)   { if (!(x)) { ERR(__VA_ARGS__); goto error; } }
+#define ENSURE(x, ...)   do { if (!(x)) { ERR(__VA_ARGS__); goto error; } } while (0)
 #define XWRITE(...)      ENSURE(_write(__VA_ARGS__) == 0, "cannot write to output stream")
 #define XREAD(...)       ENSURE(_read(__VA_ARGS__) == 0,  "cannot read from input stream")
 

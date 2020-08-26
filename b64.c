@@ -9,7 +9,7 @@
 
 #define ERR(...)       _err("b64", __VA_ARGS__)
 #define WIPE_CTX(ctx)  crypto_wipe(ctx, sizeof(*(ctx)))
-#define XERR(...)      { ERR(__VA_ARGS__); goto error; }
+#define XERR(...)      do { ERR(__VA_ARGS__); goto error; } while (0)
 
 static const char* HELP =
     "usage: b64 -h\n"

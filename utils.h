@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define _err(name, ...) {\
+#define _err(name, ...) do {\
     fprintf(stderr, "%s: ", name);\
     fprintf(stderr, __VA_ARGS__);\
     if (errno) {\
@@ -14,7 +14,7 @@
         perror(NULL);\
     }\
     else fprintf(stderr, "\n");\
-}
+} while (0)
 
 void _free(void* buf, int bufsize);
 int _fclose(FILE **fp);
